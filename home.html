@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="HomeFunds is a local-first Android app for personal and shared household finance management, with optional Google Drive backup and synchronization.">
+  <title>HomeFunds | Personal & Household Finance</title>
+  <style>
+    :root { color-scheme: light; --purple:#6837cb; --deep:#251447; --muted:#566070; --bg:#f9f7ff; }
+    * { box-sizing:border-box; }
+    body { margin:0; font:16px/1.65 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; color:#252036; background:var(--bg); }
+    header, main, footer { width:min(960px,calc(100% - 40px)); margin:0 auto; }
+    header { display:flex; align-items:center; justify-content:space-between; padding:22px 0; }
+    .logo { display:flex; align-items:center; gap:10px; font-weight:800; color:var(--deep); font-size:1.25rem; text-decoration:none; }
+    .symbol { display:grid;place-items:center; width:36px;height:36px;border-radius:11px;background:linear-gradient(140deg,#9149f4,#4a19ae);color:white;font-size:1.25rem; }
+    nav { display:flex; gap:20px; flex-wrap:wrap; }
+    a { color:#5024b6; }
+    nav a { text-decoration:none;font-size:.94rem; }
+    .hero { background:linear-gradient(125deg,#7134d6,#332269); border-radius:24px;color:#fff;padding:64px 48px;margin:24px 0 34px; }
+    .hero h1 { font-size:clamp(2rem,4.4vw,3.4rem);line-height:1.15;margin:0 0 14px;max-width:780px; }
+    .hero p { font-size:1.12rem;max-width:700px;margin:0;color:#f1eaff; }
+    .eyebrow { font-size:.85rem;letter-spacing:.13em;text-transform:uppercase;font-weight:700;color:#e9dfff;margin:0 0 12px; }
+    h2 { margin:0 0 12px; font-size:1.35rem; }
+    .section-intro { color:var(--muted);margin-bottom:20px; }
+    .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px; }
+    .card { border:1px solid #e9e3f4;border-radius:17px;background:white;padding:23px; }
+    .card h3 { margin:0 0 8px;font-size:1.06rem; }
+    .card p { color:var(--muted);margin:0; }
+    .note { margin:28px 0 48px;padding:23px;border-radius:16px;background:#eee6fd; }
+    .note h2 { font-size:1.15rem; }
+    .note p { margin:0; }
+    footer { padding:22px 0 42px;border-top:1px solid #dfd5f0;display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;color:var(--muted);font-size:.92rem; }
+    footer a { white-space:nowrap; }
+    @media(max-width:600px) { .hero { padding:38px 26px; } header { align-items:flex-start;gap:12px;flex-direction:column; } }
+  </style>
+</head>
+<body>
+  <header>
+    <a class="logo" href="home.html"><span class="symbol" aria-hidden="true">⌂</span> HomeFunds</a>
+    <nav aria-label="Main navigation">
+      <a href="./">Privacy Policy</a>
+      <a href="terms.html">Terms of Service</a>
+    </nav>
+  </header>
+  <main>
+    <section class="hero">
+      <p class="eyebrow">Android · Personal & household finance</p>
+      <h1>Keep your household finances together, under your control.</h1>
+      <p>HomeFunds helps you record income and expenses, organize accounts and categories, review spending, and manage shared household finances.</p>
+    </section>
+    <section aria-labelledby="features">
+      <h2 id="features">What HomeFunds does</h2>
+      <p class="section-intro">An everyday finance tracker with optional collaboration and Google Drive integration.</p>
+      <div class="cards">
+        <div class="card"><h3>Track your money</h3><p>Record income, expenses, transfers, and financial accounts in one place.</p></div>
+        <div class="card"><h3>Understand spending</h3><p>Use categories, reports, and summaries to understand your household finances.</p></div>
+        <div class="card"><h3>Share a household</h3><p>Invite household members and synchronize shared financial records when you choose to enable sharing.</p></div>
+        <div class="card"><h3>Back up with Google Drive</h3><p>Optionally authorize Google Drive for app-related backup, restore, and synchronization.</p></div>
+      </div>
+    </section>
+    <section class="note" aria-labelledby="privacy">
+      <h2 id="privacy">Privacy and data control</h2>
+      <p>HomeFunds is designed to store financial records on your device. Connecting Google Drive and sharing a household are optional. Read our <a href="./">Privacy Policy</a> to learn about Google account information, permissions, backups, and shared household data.</p>
+    </section>
+  </main>
+  <footer>
+    <span>HomeFunds · Published by SignisWellfire</span>
+    <span><a href="./">Privacy Policy</a> · <a href="terms.html">Terms of Service</a> · <a href="mailto:signiswellfire@gmail.com">Contact</a></span>
+  </footer>
+</body>
+</html>
