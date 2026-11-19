@@ -38,6 +38,8 @@ delete the D1 database, because it already contains published feedback and votes
 On Steam Deck in `/home/deck/Development/HomeFunds-feedback-site`:
 
 ```sh
+# The original clone used --single-branch, so enable this remote branch.
+git remote set-branches --add origin feature/website-admin-and-open-feedback
 git fetch origin feature/website-admin-and-open-feedback
 git switch -c feature/website-admin-and-open-feedback --track origin/feature/website-admin-and-open-feedback
 cd feedback-worker
