@@ -205,10 +205,13 @@
     await load();
   });
   document.getElementById("logout-button").addEventListener("click", async () => {
-    try { await api("/v1/admin/session", {method:"DELETE"}); }
-    catch { /* Clearing local UI is still necessary if logout failed. */ }
-    showAdmin(false);
-    message(globalMessage, "Signed out. If the network was offline, close this browser tab.");
+    try {
+      await api("/v1/admin/session", {method:"DELETE"});
+      showAdmin(false);
+      message(globalMessage, "Signed out.", "ok");
+    } catch (err) {
+      message(globalMessage, "Could not sign out securely: " + err.message, "error");
+    }
   });
   document.getElementById("refresh-button").addEventListener("click", () => void load());
   filter.addEventListener("change", () => void load());
