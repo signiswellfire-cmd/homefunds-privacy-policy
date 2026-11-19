@@ -349,6 +349,9 @@ async function submitComment(request, env, feedbackId) {
       (displayName && preventPersonalData(displayName,""))) {
     return error("Optional display name must be 60 characters or less and contain no links or emails.",400,request,env);
   }
+  if (/^(homefunds\b.*|admin(?:istrator)?|moderator|official|support team)$/i.test(displayName)) {
+    return error("Please choose a name that does not impersonate HomeFunds staff.",400,request,env);
+  }
   const feedback = await env.DB.prepare("SELECT status FROM feedback WHERE id=?").bind(feedbackId).first();
   if (!feedback || !VISIBLE.includes(feedback.status)) return error("Suggestion not found.",404,request,env);
   const parentId = await parentForComment(env,feedbackId,body.parentId);
