@@ -2,5 +2,5 @@
 // Configure after the Worker, D1 database, and Turnstile widget are deployed.
 window.HOMEFUNDS_FEEDBACK_CONFIG = Object.freeze({
   apiBase: "https://feedback-api.signiswellfire.com",
-  turnstileSiteKey: ""
+  turnstileSiteKey: "0x4AAAAAAGIDdApxm8Nldk_Y"
 });
