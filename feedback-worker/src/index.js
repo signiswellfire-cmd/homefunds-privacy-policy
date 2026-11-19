@@ -148,7 +148,7 @@ async function constantTimeTokenEqual(candidate, env) {
 async function adminCookieValid(request, env) {
   if (!safeOrigin(request, env)) return false;
   const header = request.headers.get("Cookie") || "";
-  const match = header.match(/(?:^|;\\s*)hf_feedback_admin=v1\\.([0-9]{10})\\.([0-9a-f-]{36})\\.([a-f0-9]{64})(?:;|$)/);
+  const match = header.match(/(?:^|;\s*)hf_feedback_admin=v1\.([0-9]{10})\.([0-9a-f-]{36})\.([a-f0-9]{64})(?:;|$)/);
   if (!match) return false;
   const time = Number(match[1]), now = Math.floor(Date.now() / 1000);
   if (time > now + 60 || time < now - ADMIN_SESSION_AGE) return false;
@@ -222,7 +222,7 @@ async function submit(request, env) {
   if (body.acceptedTerms !== true) {
     return error("You must accept the Community Rules before submitting.", 400, request, env);
   }
-  if (submitterName.length > 60 || /[\\r\\n]/.test(submitterName)) {
+  if (submitterName.length > 60 || /[\r\n]/.test(submitterName)) {
     return error("Your optional name must be 60 characters or fewer.", 400, request, env);
   }
   const privacyError = preventPersonalData(title, details) ||
