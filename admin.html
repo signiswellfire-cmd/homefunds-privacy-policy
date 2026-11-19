@@ -47,6 +47,11 @@
     #login-panel{max-width:640px}
     #filter{min-width:180px}
     .report-label{color:#a33737}
+    .reply-form{margin-top:14px;padding:12px;border:1px solid var(--border);border-radius:12px;background:#faf8ff}
+    .reply-form textarea{width:100%;min-height:88px;border:1px solid #cfc2e7;border-radius:11px;padding:11px;resize:vertical;font:inherit}
+    .reply-form p{font-size:.86rem}
+    .comment-admin{border-left:3px solid #b9a2ee;padding-left:12px}
+    .comments-label{color:#4a2998;font-weight:700}
     @media(max-width:540px){.card{padding:16px}.hero{padding:22px}}
   </style>
   <script src="feedback-config.js" defer></script>
@@ -61,7 +66,7 @@
     <main>
       <div class="hero">
         <h1>Feedback administration</h1>
-        <p>Owner-only moderation. Review, approve, plan, hide or delete suggestions.</p>
+        <p>Owner-only moderation. Review suggestions, comments, official replies, reports and publication status.</p>
       </div>
       <div class="instructions">
         This page is public HTML, but submissions and management actions require a private server-verified administrator session. Never share your administrator token.
@@ -90,8 +95,12 @@
               <option value="planned">Planned</option>
               <option value="in_progress">In progress</option>
               <option value="completed">Completed</option>
-              <option value="hidden">Hidden</option>
-              <option value="reports">Reported content</option>
+              <option value="hidden">Hidden suggestions</option>
+              <option value="reports">Reported suggestions</option>
+              <option value="comments_pending">Comments awaiting approval</option>
+              <option value="comments_published">Published comments</option>
+              <option value="comments_hidden">Hidden comments</option>
+              <option value="comment_reports">Reported comments</option>
             </select>
             <button id="refresh-button" type="button">Refresh</button>
           </div>
