@@ -52,7 +52,7 @@ CREATE INDEX IF NOT EXISTS idx_reports_feedback ON reports(feedback_id);
 CREATE TABLE IF NOT EXISTS feedback_comments (
   id TEXT PRIMARY KEY NOT NULL,
   feedback_id TEXT NOT NULL REFERENCES feedback(id) ON DELETE CASCADE,
-  parent_id TEXT REFERENCES feedback_comments(id) ON DELETE SET NULL,
+  parent_id TEXT REFERENCES feedback_comments(id) ON DELETE CASCADE,
   body TEXT NOT NULL,
   author_tag TEXT NOT NULL,
   author_display_name TEXT,
