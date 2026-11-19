@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#6336c9">
+  <meta name="description" content="Private HomeFunds community feedback moderation">
+  <title>HomeFunds | Feedback Admin</title>
+  <style>
+    :root{color-scheme:light;--purple:#6336c9;--ink:#292044;--muted:#646176;--border:#e5def4}
+    *{box-sizing:border-box}
+    body{margin:0;background:#f8f6ff;color:var(--ink);font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
+    .container{max-width:1080px;margin:auto;padding:22px 18px 70px}
+    header{display:flex;justify-content:space-between;align-items:center;gap:15px;flex-wrap:wrap;margin-bottom:24px}
+    .brand{color:#281350;font-weight:800;font-size:1.2rem;text-decoration:none}
+    .hero{padding:27px 30px;border-radius:22px;background:linear-gradient(110deg,#713bd7,#331d75);color:#fff;margin-bottom:20px}
+    .hero h1{margin:0 0 4px;font-size:clamp(1.65rem,4vw,2.35rem)}
+    .hero p{margin:0;color:#eae2ff}
+    .card{border:1px solid var(--border);border-radius:17px;background:white;padding:22px;margin:16px 0}
+    h2{margin:0 0 12px;font-size:1.2rem}
+    h3{margin:0 0 8px;font-size:1.05rem}
+    p{margin:8px 0}
+    .muted{color:var(--muted);font-size:.9rem}
+    input,select,button{font:inherit}
+    input,select{padding:11px;border:1px solid #cfc2e7;border-radius:11px;max-width:100%;background:white}
+    input{width:100%}
+    label{font-weight:650;display:block;margin-bottom:6px}
+    button{padding:9px 13px;border-radius:11px;cursor:pointer;border:1px solid #d8cdf0;background:#f5f0ff;color:#43228b;font-weight:650}
+    button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #c7b2ff}
+    button:disabled{opacity:.5;cursor:not-allowed}
+    .primary{background:var(--purple);color:#fff;border:0}
+    .danger{border-color:#e5b1b1;color:#a12b2b;background:#fff3f3}
+    .row{display:flex;gap:11px;align-items:center;flex-wrap:wrap}
+    .row.between{justify-content:space-between}
+    .queue{display:grid;gap:12px}
+    .feedback{border:1px solid var(--border);border-radius:14px;padding:18px;background:#fff}
+    .feedback .description{white-space:pre-wrap;overflow-wrap:anywhere}
+    .meta{font-size:.82rem;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap}
+    .tag{display:inline-block;color:#4b2596;background:#ece5ff;border-radius:999px;padding:3px 9px;font-weight:700;font-size:.8rem}
+    .message{min-height:22px;margin:12px 0;font-size:.92rem}
+    .message.error{color:#b42520}
+    .message.ok{color:#167444}
+    .hidden{display:none!important}
+    .instructions{background:#eee6ff;border-radius:12px;padding:12px;margin:16px 0}
+    #login-panel{max-width:640px}
+    #filter{min-width:180px}
+    .report-label{color:#a33737}
+    .reply-form{margin-top:14px;padding:12px;border:1px solid var(--border);border-radius:12px;background:#faf8ff}
+    .reply-form textarea{width:100%;min-height:88px;border:1px solid #cfc2e7;border-radius:11px;padding:11px;resize:vertical;font:inherit}
+    .reply-form p{font-size:.86rem}
+    .comment-admin{border-left:3px solid #b9a2ee;padding-left:12px}
+    .comments-label{color:#4a2998;font-weight:700}
+    @media(max-width:540px){.card{padding:16px}.hero{padding:22px}}
+  </style>
+  <script src="feedback-config.js" defer></script>
+  <script src="admin.js" defer></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <a class="brand" href="home.html">⌂ HomeFunds</a>
+      <nav><a href="feedback.html">Public feedback</a> · <a href="home.html">Home</a></nav>
+    </header>
+    <main>
+      <div class="hero">
+        <h1>Feedback administration</h1>
+        <p>Owner-only moderation. Review suggestions, comments, official replies, reports and publication status.</p>
+      </div>
+      <div class="instructions">
+        This page is public HTML, but submissions and management actions require a private server-verified administrator session. Never share your administrator token.
+      </div>
+      <div id="global-message" role="status" aria-live="polite" class="message"></div>
+      <section class="card" id="login-panel" aria-labelledby="login-heading">
+        <h2 id="login-heading">Administrator sign-in</h2>
+        <p class="muted">Paste your HomeFunds Feedback Admin Token from your password manager. The token is used only to sign in over HTTPS and is not stored in browser local storage.</p>
+        <form id="login-form">
+          <label for="token">Administrator token</label>
+          <input type="password" id="token" required autocomplete="current-password" spellcheck="false" placeholder="Paste administrator token">
+          <p><button class="primary" id="login-button" type="submit">Sign in securely</button></p>
+        </form>
+      </section>
+      <section id="admin-panel" class="hidden" aria-label="Moderation tools">
+        <div class="card">
+          <div class="row between">
+            <div><h2>Review feedback</h2><p class="muted">Only submissions you approve appear publicly. Names are voluntary and unverified; older posts are anonymous.</p></div>
+            <button id="logout-button" type="button">Sign out</button>
+          </div>
+          <div class="row">
+            <label for="filter">Show:</label>
+            <select id="filter">
+              <option value="pending">Awaiting approval</option>
+              <option value="published">Published / Under review</option>
+              <option value="planned">Planned</option>
+              <option value="in_progress">In progress</option>
+              <option value="completed">Completed</option>
+              <option value="hidden">Hidden suggestions</option>
+              <option value="reports">Reported suggestions</option>
+              <option value="comments_pending">Comments awaiting approval</option>
+              <option value="comments_published">Published comments</option>
+              <option value="comments_hidden">Hidden comments</option>
+              <option value="comment_reports">Reported comments</option>
+            </select>
+            <button id="refresh-button" type="button">Refresh</button>
+          </div>
+          <div id="list-message" role="status" aria-live="polite" class="message"></div>
+          <div id="feedback-queue" class="queue"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

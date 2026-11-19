@@ -1,7 +1,7 @@
 name: Feedback board checks
 on:
   push:
-    branches: [feature/community-feedback-board]
+    branches: [feature/community-feedback-board, feature/website-admin-and-open-feedback]
   pull_request:
 
 jobs:
@@ -15,6 +15,7 @@ jobs:
       - name: Validate JavaScript
         run: |
           node --check feedback.js
+          node --check admin.js
           node --check feedback-config.js
           node --check feedback-worker/src/index.js
       - name: Test Worker protections
@@ -27,7 +28,7 @@ jobs:
           database = sqlite3.connect(":memory:")
           database.executescript(Path("feedback-worker/schema.sql").read_text())
           tables = {row[0] for row in database.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-          assert {"feedback", "votes", "reports", "rate_limits"}.issubset(tables)
+          assert {"feedback", "votes", "reports", "rate_limits", "feedback_comments", "feedback_comment_reports"}.issubset(tables)
           database.execute("INSERT INTO feedback(id,title,details,author_tag,category,status,created_at,updated_at) VALUES('a','valid title','valid details','anon123','feature','published',1,1)")
           database.execute("INSERT INTO votes(feedback_id,voter_hash,created_at) VALUES('a','browser1',1)")
           try:
@@ -35,5 +36,32 @@ jobs:
               raise AssertionError("Duplicate vote accepted")
           except sqlite3.IntegrityError:
               pass
-          print("Schema and unique-vote constraint pass")
+          columns = {col[1] for col in database.execute("PRAGMA table_info(feedback)")}
+          assert "submitter_name" in columns
+          # Verify the upgrade is safe on an existing database with live data.
+          older = sqlite3.connect(":memory:")
+          old_schema = Path("feedback-worker/schema.sql").read_text().split(
+              "-- Public discussion on approved feedback.", 1
+          )[0].replace("  submitter_name TEXT,\n", "")
+          older.executescript(old_schema)
+          older.execute("INSERT INTO feedback(id,title,details,author_tag,category,status,created_at,updated_at) VALUES('old','existing feedback','some details','anon456','feature','published',1,1)")
+          assert "feedback_comments" not in {
+              row[0] for row in older.execute("SELECT name FROM sqlite_master WHERE type='table'")
+          }
+          older.executescript(Path("feedback-worker/migrations/0001_submitter_name.sql").read_text())
+          assert older.execute("SELECT COUNT(*) FROM feedback").fetchone()[0] == 1
+          assert older.execute("SELECT submitter_name FROM feedback WHERE id='old'").fetchone()[0] is None
+          comment_tables = {row[0] for row in older.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          assert {"feedback_comments", "feedback_comment_reports"}.issubset(comment_tables)
+          older.execute("INSERT INTO feedback_comments(id,feedback_id,body,author_tag,is_admin,status,created_at,updated_at) VALUES('comment-1','old','This is a reply','browser-1',0,'pending',2,2)")
+          older.execute("INSERT INTO feedback_comment_reports(comment_id,reporter_hash,reason,created_at) VALUES('comment-1','reporter-1','spam',3)")
+          older.execute("INSERT INTO feedback_comments(id,feedback_id,parent_id,body,author_tag,is_admin,status,created_at,updated_at) VALUES('reply-1','old','comment-1','This is a nested reply','browser-2',0,'published',4,4)")
+          older.execute("DELETE FROM feedback_comments WHERE id='comment-1'")
+          assert older.execute("SELECT COUNT(*) FROM feedback_comments WHERE id='reply-1'").fetchone()[0] == 0
+          older.execute("INSERT INTO feedback_comments(id,feedback_id,body,author_tag,is_admin,status,created_at,updated_at) VALUES('comment-2','old','Another comment','browser-1',0,'published',5,5)")
+          # Removing a suggestion must also clear its comments and reports.
+          older.execute("DELETE FROM feedback WHERE id='old'")
+          assert older.execute("SELECT COUNT(*) FROM feedback_comments").fetchone()[0] == 0
+          assert older.execute("SELECT COUNT(*) FROM feedback_comment_reports").fetchone()[0] == 0
+          print("Schema, unique-vote constraint, non-destructive upgrade and comment cascading pass")
           PY
