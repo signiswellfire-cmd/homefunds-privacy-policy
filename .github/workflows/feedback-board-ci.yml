@@ -41,7 +41,7 @@ jobs:
           # Verify the upgrade is safe on an existing database with live data.
           older = sqlite3.connect(":memory:")
           old_schema = Path("feedback-worker/schema.sql").read_text().replace(
-              "  submitter_name TEXT,\\n", ""
+              "  submitter_name TEXT,\n", ""
           )
           older.executescript(old_schema)
           older.execute("INSERT INTO feedback(id,title,details,author_tag,category,status,created_at,updated_at) VALUES('old','existing feedback','some details','anon456','feature','published',1,1)")
