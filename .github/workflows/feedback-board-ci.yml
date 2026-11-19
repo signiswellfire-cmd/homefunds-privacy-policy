@@ -28,7 +28,7 @@ jobs:
           database = sqlite3.connect(":memory:")
           database.executescript(Path("feedback-worker/schema.sql").read_text())
           tables = {row[0] for row in database.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-          assert {"feedback", "votes", "reports", "rate_limits"}.issubset(tables)
+          assert {"feedback", "votes", "reports", "rate_limits", "feedback_comments", "feedback_comment_reports"}.issubset(tables)
           database.execute("INSERT INTO feedback(id,title,details,author_tag,category,status,created_at,updated_at) VALUES('a','valid title','valid details','anon123','feature','published',1,1)")
           database.execute("INSERT INTO votes(feedback_id,voter_hash,created_at) VALUES('a','browser1',1)")
           try:
@@ -40,13 +40,24 @@ jobs:
           assert "submitter_name" in columns
           # Verify the upgrade is safe on an existing database with live data.
           older = sqlite3.connect(":memory:")
-          old_schema = Path("feedback-worker/schema.sql").read_text().replace(
-              "  submitter_name TEXT,\n", ""
-          )
+          old_schema = Path("feedback-worker/schema.sql").read_text().split(
+              "-- Public discussion on approved feedback.", 1
+          )[0].replace("  submitter_name TEXT,\n", "")
           older.executescript(old_schema)
           older.execute("INSERT INTO feedback(id,title,details,author_tag,category,status,created_at,updated_at) VALUES('old','existing feedback','some details','anon456','feature','published',1,1)")
+          assert "feedback_comments" not in {
+              row[0] for row in older.execute("SELECT name FROM sqlite_master WHERE type='table'")
+          }
           older.executescript(Path("feedback-worker/migrations/0001_submitter_name.sql").read_text())
           assert older.execute("SELECT COUNT(*) FROM feedback").fetchone()[0] == 1
           assert older.execute("SELECT submitter_name FROM feedback WHERE id='old'").fetchone()[0] is None
-          print("Schema, unique-vote constraint, and non-destructive upgrade pass")
+          comment_tables = {row[0] for row in older.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          assert {"feedback_comments", "feedback_comment_reports"}.issubset(comment_tables)
+          older.execute("INSERT INTO feedback_comments(id,feedback_id,body,author_tag,is_admin,status,created_at,updated_at) VALUES('comment-1','old','This is a reply','browser-1',0,'pending',2,2)")
+          older.execute("INSERT INTO feedback_comment_reports(comment_id,reporter_hash,reason,created_at) VALUES('comment-1','reporter-1','spam',3)")
+          # Removing a suggestion must also clear its comments and reports.
+          older.execute("DELETE FROM feedback WHERE id='old'")
+          assert older.execute("SELECT COUNT(*) FROM feedback_comments").fetchone()[0] == 0
+          assert older.execute("SELECT COUNT(*) FROM feedback_comment_reports").fetchone()[0] == 0
+          print("Schema, unique-vote constraint, non-destructive upgrade and comment cascading pass")
           PY
