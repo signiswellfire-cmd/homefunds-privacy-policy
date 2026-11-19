@@ -1,0 +1,39 @@
+name: Feedback board checks
+on:
+  push:
+    branches: [feature/community-feedback-board]
+  pull_request:
+
+jobs:
+  feedback:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate JavaScript
+        run: |
+          node --check feedback.js
+          node --check feedback-config.js
+          node --check feedback-worker/src/index.js
+      - name: Test Worker protections
+        run: node --test feedback-worker/tests/*.test.mjs
+      - name: Validate SQL schema and vote uniqueness
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import sqlite3
+          database = sqlite3.connect(":memory:")
+          database.executescript(Path("feedback-worker/schema.sql").read_text())
+          tables = {row[0] for row in database.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          assert {"feedback", "votes", "reports", "rate_limits"}.issubset(tables)
+          database.execute("INSERT INTO feedback(id,title,details,author_tag,category,status,created_at,updated_at) VALUES('a','valid title','valid details','anon123','feature','published',1,1)")
+          database.execute("INSERT INTO votes(feedback_id,voter_hash,created_at) VALUES('a','browser1',1)")
+          try:
+              database.execute("INSERT INTO votes(feedback_id,voter_hash,created_at) VALUES('a','browser1',2)")
+              raise AssertionError("Duplicate vote accepted")
+          except sqlite3.IntegrityError:
+              pass
+          print("Schema and unique-vote constraint pass")
+          PY

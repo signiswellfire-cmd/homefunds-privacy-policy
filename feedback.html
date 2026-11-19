@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Suggest features, report issues, and vote on improvements to HomeFunds. No email required.">
+  <meta name="theme-color" content="#6035c6">
+  <title>Community Feedback | HomeFunds</title>
+  <style>
+    :root {color-scheme:light;--purple:#6336c9;--deep:#251447;--muted:#65627b;--surface:#fff;--bg:#f8f6ff;--line:#e6e0f4}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);font:16px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#26203c}
+    a{color:#4f23ab}
+    .container{width:min(970px,calc(100% - 32px));margin:auto}
+    header{display:flex;justify-content:space-between;align-items:center;padding:23px 0;gap:12px}
+    .brand{text-decoration:none;color:var(--deep);font-weight:800;font-size:1.2rem}
+    .brandmark{display:inline-grid;place-items:center;width:35px;height:35px;color:#fff;background:linear-gradient(130deg,#974bfa,#4d1cae);border-radius:11px;margin-right:8px}
+    header nav{display:flex;gap:16px;flex-wrap:wrap;font-size:.88rem}
+    .hero{padding:35px clamp(22px,4vw,46px);border-radius:24px;background:linear-gradient(120deg,#7140df,#321d73);color:#fff;margin-bottom:23px}
+    .hero .eyebrow{color:#ded0ff;letter-spacing:.13em;font-size:.78rem;font-weight:700}
+    .hero h1{font-size:clamp(1.75rem,4.6vw,2.9rem);margin:8px 0;line-height:1.18}
+    .hero p{max-width:650px;color:#f0eaff;margin:0}
+    .toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:20px 0 14px}
+    .toolbar h2{font-size:1.24rem;margin:0}
+    button,select,input,textarea{font:inherit}
+    button{cursor:pointer}
+    .primary{border:0;border-radius:13px;background:var(--purple);color:#fff;padding:11px 17px;font-weight:700}
+    .primary:hover{background:#49229e}
+    .primary:disabled,.vote:disabled{opacity:.5;cursor:not-allowed}
+    .ghost{border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:9px 13px;color:#432390}
+    .controls{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+    .controls label{font-size:.88rem;color:var(--muted)}
+    .panel{background:var(--surface);border:1px solid var(--line);border-radius:17px;padding:22px;margin:15px 0;box-shadow:0 4px 15px #27115208}
+    .panel h2,.panel h3{margin:0 0 7px}
+    .panel p{margin:0 0 12px}
+    .muted{color:var(--muted)}
+    .feed{display:grid;gap:12px;margin:13px 0 30px}
+    .item{display:flex;gap:16px;align-items:flex-start;background:#fff;border:1px solid var(--line);border-radius:17px;padding:20px}
+    .item-copy{flex:1;min-width:0}
+    .item h3{font-size:1.08rem;margin:0 0 6px;overflow-wrap:anywhere}
+    .item .description{white-space:pre-line;overflow-wrap:anywhere;margin:9px 0;color:#4b4562;font-size:.93rem}
+    .meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:.76rem;color:var(--muted)}
+    .pill{display:inline-block;border-radius:100px;background:#ece6ff;padding:4px 9px;font-weight:700;color:#4d269a}
+    .vote{display:grid;place-items:center;gap:4px;min-width:73px;border:1px solid #cebdf4;background:#faf8ff;border-radius:14px;padding:10px 8px;color:#4c259c;font-weight:750}
+    .vote.active{background:#5f38c7;color:#fff;border-color:#5f38c7}
+    .vote span{font-size:.75rem;font-weight:500}
+    .entry-grid{display:grid;gap:14px;grid-template-columns:1fr 1fr}
+    .actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px}
+    .actions button{font-size:.8rem;padding:6px 10px}
+    .report-form{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0}
+    .report-form select{border:1px solid var(--line);border-radius:9px;padding:7px}
+    .checkboxrow{display:flex;align-items:flex-start;gap:9px;margin:16px 0;font-size:.9rem}
+    .checkboxrow input{min-width:18px;min-height:18px;accent-color:var(--purple)}
+    .age-panel{margin:55px auto;max-width:570px;text-align:center}
+    .age-panel .controls{justify-content:center}
+    .age-panel h1{line-height:1.2;color:var(--deep)}
+    .field{display:flex;flex-direction:column;gap:5px}
+    .field.full{grid-column:1/-1}
+    .field label{font-weight:650;font-size:.88rem}
+    .field input,.field select,.field textarea{width:100%;border:1px solid #d6cde8;border-radius:11px;padding:11px;background:#fff;color:#28213b}
+    .field textarea{resize:vertical;min-height:110px}
+    .field input:focus-visible,.field textarea:focus-visible,.field select:focus-visible{outline:3px solid #ddcaff}
+    .warning{background:#f1ebff;border-radius:12px;padding:14px;color:#4e3781;font-size:.88rem}
+    .status{margin:15px 0;font-size:.94rem;min-height:24px}
+    .status.error{color:#b42318}
+    .status.success{color:#167044}
+    .hidden{display:none!important}
+    .bottom{font-size:.85rem;border-top:1px solid var(--line);color:var(--muted);padding:25px 0 45px;display:flex;gap:15px;justify-content:space-between;flex-wrap:wrap}
+    @media(max-width:580px){.item{padding:14px;gap:10px}.vote{min-width:63px}.entry-grid{grid-template-columns:1fr}.hero{padding:27px 21px}.panel{padding:17px}}
+    @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+  </style>
+  <script src="feedback-config.js" defer></script>
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" defer></script>
+  <script src="feedback.js" defer></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <a class="brand" href="home.html"><span class="brandmark" aria-hidden="true">⌂</span>HomeFunds</a>
+      <nav aria-label="Main navigation"><a href="home.html">Home</a><a href="./">Privacy</a><a href="terms.html">Terms</a></nav>
+    </header>
+    <main>
+      <section id="age-gate" class="panel age-panel">
+        <h1>HomeFunds community — adults only</h1>
+        <p class="muted">This public board contains suggestions written by other users. You must be 18 or older to view and participate.</p>
+        <div class="controls">
+          <button id="enter-board" class="primary" type="button">I am 18 or older</button>
+          <a class="ghost" href="home.html">I'm under 18 / Go back</a>
+        </div>
+      </section>
+      <div id="community-content" class="hidden">
+      <section class="hero">
+        <div class="eyebrow">HELP SHAPE HOMEFUNDS</div>
+        <h1>Community feedback &amp; feature requests</h1>
+        <p>Share your ideas, report issues, and vote on what should improve next. No email required.</p>
+      </section>
+      <div class="warning">
+        <strong>Public space:</strong> Approved suggestions are visible to everyone. Never post account details, financial records, email addresses, passwords, Google Drive links, or other private information. Suggestions are reviewed before publication.
+      </div>
+      <div id="system-message" class="status" role="status" aria-live="polite"></div>
+      <div class="toolbar">
+        <h2>Community suggestions</h2>
+        <div class="controls">
+          <label for="sort">Sort by</label>
+          <select id="sort" aria-label="Sort suggestions">
+            <option value="top">Most votes</option>
+            <option value="new">Newest</option>
+          </select>
+          <button class="ghost hidden" id="unblock-button" type="button">Unblock authors</button>
+          <button class="primary" id="add-button" type="button">Suggest an idea</button>
+        </div>
+      </div>
+      <div id="suggestions" class="feed" aria-live="polite"></div>
+      <section class="panel" id="submit-panel" aria-labelledby="form-heading">
+        <h2 id="form-heading">Submit your feedback</h2>
+        <p class="muted">Bug report, improvement, or feature idea. Your text is reviewed before appearing on the public board.</p>
+        <form id="suggest-form">
+          <div class="entry-grid">
+            <div class="field full">
+              <label for="title">Short title (8–100 characters)</label>
+              <input id="title" name="title" minlength="8" maxlength="100" required autocomplete="off" placeholder="e.g. Add shared budget summaries">
+            </div>
+            <div class="field">
+              <label for="category">Feedback type</label>
+              <select id="category" name="category" required>
+                <option value="feature">Feature request</option>
+                <option value="improvement">Improvement</option>
+                <option value="bug">Bug report</option>
+              </select>
+            </div>
+            <div class="field full">
+              <label for="details">Explain your idea (20–1500 characters)</label>
+              <textarea id="details" name="details" minlength="20" maxlength="1500" required placeholder="What problem does this solve? What would you expect HomeFunds to do?"></textarea>
+            </div>
+          </div>
+          <label class="checkboxrow"><input type="checkbox" id="accept-terms" required>
+            <span>I agree to the <a href="terms.html" target="_blank" rel="noopener">Community Rules and Terms of Service</a>. I confirm I am 18 or older, and understand that approved text may become public.</span>
+          </label>
+          <p class="muted" style="font-size:.84rem">You don't need to provide a name or email. Public votes use an anonymous browser cookie and can be reset if you clear it.</p>
+          <p class="muted" style="font-size:.84rem">Verification is required before submitting or voting.</p>
+          <div id="turnstile" aria-label="Spam prevention"></div>
+          <div id="form-message" class="status" role="status" aria-live="polite"></div>
+          <button class="primary" id="submit-button" type="submit">Submit for review</button>
+        </form>
+      </section>
+      </div>
+    </main>
+    <footer class="bottom">
+      <span>HomeFunds · Your feedback helps us improve.</span>
+      <span><a href="./">Privacy Policy</a> · <a href="terms.html">Terms of Service</a></span>
+    </footer>
+  </div>
+</body>
+</html>
