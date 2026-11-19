@@ -130,17 +130,65 @@ async function checkRateLimit(request, env, action, maxCount) {
   ).bind(bucket, day, maxCount).run();
   return Number(result.meta?.changes || 0) > 0;
 }
-async function adminAuthorized(request, env) {
-  const supplied = request.headers.get("Authorization") || "";
-  const expected = "Bearer " + env.ADMIN_TOKEN;
-  if (!env.ADMIN_TOKEN || supplied.length !== expected.length) return false;
-  // Avoid ordinary variable-time string comparison of the admin secret.
-  const providedHash = await crypto.subtle.digest("SHA-256", textEncoder.encode(supplied));
-  const expectedHash = await crypto.subtle.digest("SHA-256", textEncoder.encode(expected));
-  const a = new Uint8Array(providedHash), b = new Uint8Array(expectedHash);
+// Use the existing random ADMIN_TOKEN for browser sign-in as well as CLI access.
+// The token never goes into the browser's persistent JS-accessible storage.
+// Logged-in browsers receive a short-lived signed HttpOnly session cookie.
+const ADMIN_COOKIE = "hf_feedback_admin";
+const ADMIN_SESSION_AGE = 7 * 24 * 60 * 60;
+
+async function constantTimeTokenEqual(candidate, env) {
+  if (typeof candidate !== "string" || candidate.length < 20 || candidate.length > 500 || !env.ADMIN_TOKEN) return false;
+  const supplied = await crypto.subtle.digest("SHA-256", textEncoder.encode(candidate));
+  const expected = await crypto.subtle.digest("SHA-256", textEncoder.encode(env.ADMIN_TOKEN));
+  const a = new Uint8Array(supplied), b = new Uint8Array(expected);
   let difference = 0;
   for (let i = 0; i < a.length; i++) difference |= a[i] ^ b[i];
   return difference === 0;
+}
+async function adminCookieValid(request, env) {
+  if (!safeOrigin(request, env)) return false;
+  const header = request.headers.get("Cookie") || "";
+  const match = header.match(/(?:^|;\\s*)hf_feedback_admin=v1\\.([0-9]{10})\\.([0-9a-f-]{36})\\.([a-f0-9]{64})(?:;|$)/);
+  if (!match) return false;
+  const time = Number(match[1]), now = Math.floor(Date.now() / 1000);
+  if (time > now + 60 || time < now - ADMIN_SESSION_AGE) return false;
+  const signature = fromHex(match[3]);
+  if (!signature) return false;
+  return crypto.subtle.verify(
+    "HMAC", await keyFor(env.ADMIN_TOKEN), signature,
+    textEncoder.encode("admin-session:" + match[1] + ":" + match[2])
+  );
+}
+async function adminAuthorized(request, env) {
+  // For CLI requests allow the existing Bearer token without an Origin header.
+  const bearer = request.headers.get("Authorization") || "";
+  if (bearer.startsWith("Bearer ") && await constantTimeTokenEqual(bearer.slice(7), env)) return true;
+  // Browser cookie access requires the exact HomeFunds site Origin.
+  return adminCookieValid(request, env);
+}
+async function adminSession(request, env) {
+  if (!safeOrigin(request, env)) return error("Site origin not allowed.", 403, request, env);
+  if (request.method === "GET") {
+    return responseJson({authenticated:await adminCookieValid(request, env)},200,request,env);
+  }
+  if (request.method === "DELETE") {
+    const clear = ADMIN_COOKIE + "=; Max-Age=0; Path=/v1/admin; Secure; HttpOnly; SameSite=Strict";
+    return responseJson({authenticated:false},200,request,env,{"Set-Cookie":clear});
+  }
+  if (request.method !== "POST") return error("Method not allowed.",405,request,env);
+  if (!await checkRateLimit(request, env, "admin-login", 15)) {
+    return error("Too many sign-in attempts from this network today.", 429, request, env);
+  }
+  const body = await parseBody(request);
+  if (!await constantTimeTokenEqual(body.token, env)) {
+    return error("Incorrect administrator token.", 401, request, env);
+  }
+  const issued = String(Math.floor(Date.now() / 1000));
+  const nonce = crypto.randomUUID();
+  const sig = await signHex(env.ADMIN_TOKEN, "admin-session:" + issued + ":" + nonce);
+  const cookie = ADMIN_COOKIE + "=v1." + issued + "." + nonce + "." + sig +
+    "; Max-Age=" + ADMIN_SESSION_AGE + "; Path=/v1/admin; Secure; HttpOnly; SameSite=Strict";
+  return responseJson({authenticated:true},200,request,env,{"Set-Cookie":cookie});
 }
 async function listPublic(request, env, url) {
   const sort = url.searchParams.get("sort") === "new" ? "new" : "top";
@@ -167,13 +215,18 @@ async function submit(request, env) {
   const body = await parseBody(request);
   const title = typeof body.title === "string" ? body.title.trim() : "";
   const details = typeof body.details === "string" ? body.details.trim() : "";
+  const submitterName = typeof body.submitterName === "string" ? body.submitterName.trim() : "";
   if (title.length < 8 || title.length > 100 || details.length < 20 || details.length > 1500 || !TYPES.includes(body.category)) {
     return error("Enter a valid title (8–100 characters), explanation (20–1500), and type.", 400, request, env);
   }
-  if (body.acceptedTerms !== true || body.adultConfirmed !== true) {
-    return error("Adults must agree to the Community Rules before submitting.", 400, request, env);
+  if (body.acceptedTerms !== true) {
+    return error("You must accept the Community Rules before submitting.", 400, request, env);
   }
-  const privacyError = preventPersonalData(title, details);
+  if (submitterName.length > 60 || /[\\r\\n]/.test(submitterName)) {
+    return error("Your optional name must be 60 characters or fewer.", 400, request, env);
+  }
+  const privacyError = preventPersonalData(title, details) ||
+    (submitterName ? preventPersonalData(submitterName, "") : null);
   if (privacyError) return error(privacyError, 400, request, env);
   if (!await verifyChallenge(body.turnstileToken, request, env)) {
     return error("Verification expired or failed. Please try again.", 403, request, env);
@@ -184,9 +237,21 @@ async function submit(request, env) {
   const id = crypto.randomUUID(), now = Math.floor(Date.now()/1000);
   const identity = await voter(request, env, true);
   const authorTag = identity.hash.slice(0,16);
+  // Ignore identical reposts by the same anonymous browser during the last
+  // ten minutes. The same item should not flood the owner's moderation queue.
+  const duplicate = await env.DB.prepare(
+    "SELECT id,status FROM feedback WHERE author_tag=? AND title=? AND details=? AND category=? " +
+    "AND created_at>=? ORDER BY created_at DESC LIMIT 1"
+  ).bind(authorTag,title,details,body.category,now-600).first();
+  if (duplicate) {
+    return responseJson(
+      {id:duplicate.id,status:duplicate.status,duplicate:true,message:"Already received."},
+      200,request,env,identity.cookie ? {"Set-Cookie":identity.cookie} : {}
+    );
+  }
   await env.DB.prepare(
-    "INSERT INTO feedback(id,title,details,author_tag,category,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)"
-  ).bind(id,title,details,authorTag,body.category,"pending",now,now).run();
+    "INSERT INTO feedback(id,title,details,author_tag,submitter_name,category,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)"
+  ).bind(id,title,details,authorTag,submitterName || null,body.category,"pending",now,now).run();
   return responseJson(
     {id,status:"pending",message:"Submitted for moderation."},
     202, request, env, identity.cookie ? {"Set-Cookie":identity.cookie} : {}
@@ -270,6 +335,13 @@ async function adminUpdate(request, env, id) {
   if (!result.meta?.changes) return error("Suggestion not found.",404,request,env);
   return responseJson({id,status:body.status},200,request,env);
 }
+async function adminDelete(request, env, id) {
+  if (!await adminAuthorized(request, env)) return error("Unauthorized.",401,request,env);
+  const result = await env.DB.prepare("DELETE FROM feedback WHERE id=?").bind(id).run();
+  if (!result.meta?.changes) return error("Suggestion not found.",404,request,env);
+  // SQLite's ON DELETE CASCADE also clears the associated votes and reports.
+  return responseJson({id,deleted:true},200,request,env);
+}
 
 export default {
   async fetch(request, env) {
@@ -295,10 +367,12 @@ export default {
       if (vote && ["POST","DELETE"].includes(request.method)) return await voteOn(request,env,vote[1]);
       const report = path.match(/^\/v1\/feedback\/([0-9a-f-]{36})\/report$/);
       if (report && request.method === "POST") return await reportSuggestion(request,env,report[1]);
+      if (path === "/v1/admin/session") return await adminSession(request,env);
       if (request.method === "GET" && path === "/v1/admin/feedback") return await adminList(request,env,url);
       if (request.method === "GET" && path === "/v1/admin/reports") return await adminReports(request,env);
       const mod = path.match(/^\/v1\/admin\/feedback\/([0-9a-f-]{36})$/);
       if (mod && request.method === "PUT") return await adminUpdate(request,env,mod[1]);
+      if (mod && request.method === "DELETE") return await adminDelete(request,env,mod[1]);
       return error("Not found.",404,request,env);
     } catch (e) {
       if (e?.message === "Invalid request body." || e?.message === "Request too large.") {
