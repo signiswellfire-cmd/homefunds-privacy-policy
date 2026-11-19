@@ -54,6 +54,10 @@ git fetch origin feature/website-admin-and-open-feedback
 git switch -c feature/website-admin-and-open-feedback --track origin/feature/website-admin-and-open-feedback
 cd feedback-worker
 
+# Make a full local backup outside the GitHub repository.
+npx wrangler d1 export homefunds-feedback --remote \
+  --output="$HOME/Downloads/homefunds-feedback-before-admin-comments-20261119.sql"
+
 # Verify column is absent before migration.
 npx wrangler d1 execute homefunds-feedback --remote \
   --command="PRAGMA table_info(feedback);"
