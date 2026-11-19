@@ -1,156 +1,138 @@
-# HomeFunds community feedback backend (not deployed)
+# HomeFunds Community Feedback — Operations
 
-This code powers the public feedback board at
-`https://homefunds.signiswellfire.com/feedback.html`.
-The website remains on **GitHub Pages**. The API runs separately on
-**Cloudflare Workers + D1**, at `https://feedback-api.signiswellfire.com`.
-No paid service, domain migration, or new Google OAuth scope is required.
+The existing public board runs at:
+- https://homefunds.signiswellfire.com/feedback.html — user suggestions and voting
+- https://feedback-api.signiswellfire.com — Cloudflare Worker + D1 backend
+- https://homefunds.signiswellfire.com/admin.html — **NEW** browser-based owner moderation (after rollout)
 
-## Privacy and safety
+Hosting: GitHub Pages for the website; Cloudflare Worker/D1 for the API. No new
+financial-data server, domain or paid service is required.
 
-- The Android app only displays a dedicated HomeFunds website page. It does
-  **not** transmit local cash accounts, household IDs, transaction history,
-  Google account email, backups, or access tokens.
-- User-supplied feedback can be published publicly after the owner reviews it.
-- No email is required. A signed, secure HTTP-only cookie supports browser
-  vote deduplication and stable anonymous author tags. Clearing cookies can
-  reset the identity; vote totals are not verified unique people.
-- Visitors self-confirm adult access. Posters accept Community Rules and Terms
-  before submitting. Public items have **Report content** and **Block author**
-  buttons. Blocking hides an anonymous author's posts in that browser.
-  Reports remain private for owner review; no direct messages or comments.
-- Each submission and vote requires **server-side validated Turnstile**.
-  The Worker limits submits to 3/day and vote actions to 40/day per
-  HMAC-hashed IP. Raw IPs are not stored by this application.
-- Owner moderation is a private admin API, with the ADMIN_TOKEN stored only
-  as a Cloudflare Worker secret; never expose it in a website file or Android.
-- New feedback starts **pending**, never public immediately. Approved status
-  values are `published`, `planned`, `in_progress` and `completed`.
-  `hidden` and `pending` entries never appear in public responses.
-- This API contains feedback text, anonymous author tags, categories,
-  statuses, report/vote hashes, and rate-control hashes; no finance data.
+## What's new in this upgrade
 
-## Setup — owner actions required
+- Removes unnecessary **18+ age gate**; feedback is available without that
+  blanket restriction. Terms acceptance, pre-publication moderation and
+  public report/block controls remain mandatory.
+- Admin can sign in directly on the website using the **existing ADMIN_TOKEN**
+  saved in a password manager. No GitHub password or CLI needed for normal
+  moderation. The backend converts the token into a signed 7-day
+  `Secure; HttpOnly; SameSite=Strict` session cookie; it is not put in a
+  browser URL or localStorage.
+- Admin queue: pending/published/planned/in progress/completed/hidden, received
+  timestamp, category, vote/report counts, anonymous author tag and optional
+  name. Approve, change status, hide and permanently delete with confirmation.
+- Optional submitter name is **visible to the admin only** (not public). It
+  is provided voluntarily and **not verified**. Existing submissions have
+  no name or Google identity; the system cannot reconstruct the person's
+  real name from an anonymous browser tag.
+- Identical feedback posted again from the same browser within ten minutes
+  returns the existing item rather than creating another.
+- The existing CLI authorization via `Authorization: Bearer` still works.
 
-1. In the Cloudflare dashboard, create a **D1 database** named
-   `homefunds-feedback`. Record its database ID.
-2. Create a **Turnstile Managed widget** for
-   `homefunds.signiswellfire.com`. Save its sitekey and secret key.
-3. On a trusted machine with Node.js available, from this folder:
+## Important — upgrade the existing D1 before deploying the new code
 
-   ```sh
-   cp wrangler.toml.example wrangler.toml
-   # Edit only database_id in wrangler.toml.
-   npx wrangler login
-   npx wrangler d1 execute homefunds-feedback --remote --file=./schema.sql
-   ```
+This upgrade uses a new nullable `submitter_name` column. It must be added
+to the **existing** D1 database. Do **NOT** rerun `schema.sql` and do not
+delete the D1 database, because it already contains published feedback and votes.
 
-4. Add the secrets using Wrangler interactive prompts (never add them to Git):
-
-   ```sh
-   npx wrangler secret put TURNSTILE_SECRET
-   npx wrangler secret put VOTER_COOKIE_SECRET
-   npx wrangler secret put RATE_LIMIT_SECRET
-   npx wrangler secret put ADMIN_TOKEN
-   ```
-
-   Use separate cryptographically random values for each secret;
-   `openssl rand -hex 32` can generate them. Keep a secure offline copy
-   of the admin secret, but do **not** share it in this chat.
-
-5. Deploy the Worker:
-
-   ```sh
-   npx wrangler deploy
-   ```
-
-6. In Workers & Pages > your Worker > Settings > Domains & Routes,
-   add custom domain **`feedback-api.signiswellfire.com`**.
-   It is a separate proxied Cloudflare service. **Do not change** the
-   existing DNS-only CNAME for `homefunds.signiswellfire.com`.
-7. Verify `https://feedback-api.signiswellfire.com/v1/health` returns
-   `{"ready":true}`. Then set the public Turnstile sitekey in
-   `feedback-config.js` and review the GitHub Pages preview.
-8. Test the form, reporting, blocking, age-gate, terms consent,
-   moderation, voting and Android WebView before merging.
-   Finally deploy this website PR and the Android PR after both pass.
-
-## Moderation without emails
-
-Authenticate owner-only requests via the Authorization header. Set the secret
-temporarily in a local shell variable rather than pasting it into a command
-or putting it in a URL:
+On Steam Deck in `/home/deck/Development/HomeFunds-feedback-site`:
 
 ```sh
-export HOMEFUNDS_FEEDBACK_ADMIN_TOKEN='COPY_FROM_YOUR_SECURE_PASSWORD_MANAGER'
+git fetch origin feature/website-admin-and-open-feedback
+git switch -c feature/website-admin-and-open-feedback --track origin/feature/website-admin-and-open-feedback
+cd feedback-worker
 
-curl -fsS \
-  -H "Authorization: Bearer $HOMEFUNDS_FEEDBACK_ADMIN_TOKEN" \
-  "https://feedback-api.signiswellfire.com/v1/admin/feedback?status=pending"
+# Verify column is absent before migration.
+npx wrangler d1 execute homefunds-feedback --remote \
+  --command="PRAGMA table_info(feedback);"
 
-# Replace the feedback UUID with one returned by the pending list:
-curl -fsS -X PUT \
-  -H "Authorization: Bearer $HOMEFUNDS_FEEDBACK_ADMIN_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"status":"published"}' \
-  "https://feedback-api.signiswellfire.com/v1/admin/feedback/REPLACE_FEEDBACK_UUID"
+# One-time, non-destructive migration (do not execute twice).
+npx wrangler d1 execute homefunds-feedback --remote \
+  --file=./migrations/0001_submitter_name.sql
+
+# Verify the new field exists and current data was preserved.
+npx wrangler d1 execute homefunds-feedback --remote \
+  --command="SELECT id,title,status,submitter_name FROM feedback;"
 ```
 
-To inspect reports of objectionable posts:
+`wrangler.toml` and the `.wrangler/` directory are intentionally untracked
+and ignored. The local Worker configuration and custom domain remain intact
+across branch switches; do not check secrets or private files into Git.
+
+Once database migration is confirmed, deploy the new Worker:
 
 ```sh
-curl -fsS -H "Authorization: Bearer $HOMEFUNDS_FEEDBACK_ADMIN_TOKEN" \
-  "https://feedback-api.signiswellfire.com/v1/admin/reports"
+npx wrangler deploy
 ```
 
-Allowed admin statuses: `pending`, `published`, `planned`,
-`in_progress`, `completed`, `hidden`.
-If you accidentally approve sensitive content, change to `hidden`.
-For the first version, moderation is command-line only; there is **no**
-unauthenticated admin dashboard.
+Then verify the health and list endpoints, and test `admin.html` only after
+the website branch is merged/published. **Do not merge the website branch
+before deploying the new backend**, because the website UI calls the new
+admin-session API and optional-name D1 column.
+
+## How to sign in and moderate after deployment
+
+1. Visit `https://homefunds.signiswellfire.com/admin.html`.
+2. Paste the **same HomeFunds Feedback Admin Token** previously used in
+   Konsole. Use a password manager so you don't have to type it every time.
+3. Review pending posts, choose **Approve & publish**, change status or hide.
+4. Use **Delete permanently** only when you want to erase the suggestion,
+   votes and reports; hidden is better for reversible moderation.
+5. See **Reported content** to review reports. Sign out when done.
+
+Never share the ADMIN_TOKEN or put it in a GitHub file. The page itself is
+public HTML, but its underlying moderation data and actions are protected
+by the server's administrator token/session and allowed-site-origin checks.
+
+## Privacy and Google Play user-generated-content requirements
+
+- This system does not transmit Google OAuth tokens, financial accounts,
+  transaction details or Drive backup contents from HomeFunds.
+- Optional names are stored in Cloudflare D1, visible only to the owner.
+  Public listing does not return them.
+- Report, block, terms acceptance, Turnstile validation, rate-limiting and
+  pending-by-default moderation remain active.
+- A browser-signed cookie supports best-effort vote uniqueness; resetting
+  cookies can reset anonymous identity. It is not proof of one human user.
+- Review Google Play's UGC, target-audience/content rating and Data Safety
+  disclosures before merging Android PR #34.
+- Admin session cookies are `HttpOnly; Secure; SameSite=Strict`, scoped to
+  the API's `/v1/admin` path, and expire after seven days.
+- CLI owner calls do not require a session cookie and continue accepting the
+  Bearer admin token. Browser cookie-authenticated operations require the
+  exact HomeFunds website Origin.
 
 ## API contract
 
-- `GET /v1/feedback?sort=top|new` — published suggestions, vote totals,
-  and whether the current signed browser voted; no private fields.
-- `POST /v1/feedback` — `title`, `details`, `category`,
-  `acceptedTerms`, `adultConfirmed`, `turnstileToken`; returns HTTP 202 pending.
-- `POST /v1/feedback/:id/vote` — `turnstileToken`; vote once per
-  signed browser cookie.
-- `DELETE /v1/feedback/:id/vote` — `turnstileToken`; undo own vote.
-- `POST /v1/feedback/:id/report` — `reason` and `turnstileToken`;
-  creates a private moderation report.
-- `GET /v1/admin/reports` — owner only, report queue.
-- `GET /v1/admin/feedback?status=pending` — owner only.
-- `PUT /v1/admin/feedback/:id` — owner only, JSON `status`.
+Public:
+- `GET /v1/feedback?sort=top|new`
+- `POST /v1/feedback`: `title`, `details`, `category`,
+  optional `submitterName`, `acceptedTerms:true`, `turnstileToken`.
+- `POST|DELETE /v1/feedback/:id/vote`
+- `POST /v1/feedback/:id/report`
 
-CORS is restricted to the HomeFunds website origin; accepted Turnstile
-tokens must have that website hostname and action `feedback`.
+Private:
+- `POST /v1/admin/session`: `{token}` sets admin session cookie.
+- `GET /v1/admin/session`: verifies current browser session.
+- `DELETE /v1/admin/session`: logs out.
+- `GET /v1/admin/feedback?status=pending`: owner queue.
+- `GET /v1/admin/reports`: private report queue.
+- `PUT /v1/admin/feedback/:id`: change status.
+- `DELETE /v1/admin/feedback/:id`: permanently delete post and child records.
 
-## Acceptance tests before publishing
+## Regression / release checklist
 
-- Unconfigured website displays a clear unavailable message and does not
-  pretend to accept suggestions.
-- New post becomes pending; it cannot be viewed or voted on publicly until
-  the owner approves it.
-- Public list omits email, finance data, hashes, IPs, Google IDs and
-  moderation-only fields.
-- XSS attempts such as HTML and scripts remain inert text.
-- Invalid or reused Turnstile token, wrong hostname or action is rejected.
-- Duplicate voting from the same cookie cannot inflate the count, but
-  clearing browser storage can reset identity (known MVP limitation).
-- CORS blocks origins other than the HomeFunds website.
-- Missing/incorrect admin token cannot approve or hide anything.
-- Header, responsive layout, Back/Close behavior work in Android WebView.
-- Public feedback does not interfere with GitHub Pages privacy/terms or
-  Google Drive OAuth domain verification.
-- Confirm Google Play UGC compliance: adult access, terms acceptance, ability
-  to report and block publicly visible content/users, and timely moderation.
-  Update the Play content rating and Data Safety answers as appropriate.
-- Confirm consent/privacy notice and release legal text before production.
-
-## Operational note
-
-The hosting estimate is **S$0 at low usage**, subject to Cloudflare's free
-tier limits and possible future policy changes. If those limits are reached,
-submissions or queries may fail until limits reset. No purchase is authorized.
+1. Confirm existing published suggestions and vote totals survive the D1
+   migration and Worker redeploy.
+2. Invalid token → no cookie; successful token → HttpOnly session; logout →
+   cookie deleted; foreign-origin cookie requests denied.
+3. No public feedback endpoint exposes optional submitter names, account data,
+   admin reports or session secrets.
+4. Review old anonymous submissions (name displays Anonymous and timestamp).
+5. Submit with optional name; confirm it is visible only to admin. Submit
+   without name; confirm that remains possible without any 18+ prompt.
+6. Approve, change status, hide, delete; confirm reported items and votes
+   behave correctly.
+7. Confirm current mobile/Android WebView feedback experience still works,
+   and Terms/report/block remain available.
+8. Publish the website via reviewed PR only after the backend passes.
