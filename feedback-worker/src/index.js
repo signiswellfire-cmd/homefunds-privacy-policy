@@ -196,7 +196,8 @@ async function listPublic(request, env, url) {
   const order = sort === "new" ? "f.created_at DESC" : "voteCount DESC, f.created_at DESC";
   const rows = await env.DB.prepare(
     "SELECT f.id, f.title, f.details, f.author_tag AS authorTag, f.category, f.status, f.created_at AS createdAt, " +
-    "COUNT(v.voter_hash) AS voteCount, MAX(CASE WHEN v.voter_hash = ? THEN 1 ELSE 0 END) AS voted " +
+    "COUNT(v.voter_hash) AS voteCount, MAX(CASE WHEN v.voter_hash = ? THEN 1 ELSE 0 END) AS voted, " +
+    "(SELECT COUNT(*) FROM feedback_comments c WHERE c.feedback_id=f.id AND c.status='published') AS commentCount " +
     "FROM feedback AS f LEFT JOIN votes AS v ON v.feedback_id=f.id " +
     "WHERE f.status IN ('published','planned','in_progress','completed') " +
     "GROUP BY f.id ORDER BY " + order + " LIMIT 100"
@@ -304,6 +305,157 @@ async function reportSuggestion(request, env, id) {
   );
 }
 
+
+function validUuid(value) {
+  return typeof value === "string" && /^[0-9a-f-]{36}$/.test(value);
+}
+function cleanCommentBody(body, {admin = false} = {}) {
+  if (typeof body !== "string") return null;
+  const cleaned = body.trim();
+  if (cleaned.length < (admin ? 2 : 10) || cleaned.length > 1200) return null;
+  if (preventPersonalData(cleaned, "")) return null;
+  return cleaned;
+}
+async function parentForComment(env, feedbackId, parentId) {
+  if (parentId === null || parentId === undefined || parentId === "") return null;
+  if (!validUuid(parentId)) return false;
+  const parent = await env.DB.prepare(
+    "SELECT id, feedback_id, parent_id, status FROM feedback_comments " +
+    "WHERE id=? AND feedback_id=?"
+  ).bind(parentId, feedbackId).first();
+  // Enforce at most one level of nesting, and no replies to hidden or pending comments.
+  if (!parent || parent.status !== "published" || parent.parent_id) return false;
+  return parent.id;
+}
+async function publicComments(request, env, feedbackId) {
+  const feedback = await env.DB.prepare("SELECT status FROM feedback WHERE id=?").bind(feedbackId).first();
+  if (!feedback || !VISIBLE.includes(feedback.status)) return error("Suggestion not found.",404,request,env);
+  const results = await env.DB.prepare(
+    "SELECT id, parent_id AS parentId, body, author_tag AS authorTag, " +
+    "author_display_name AS displayName, is_admin AS isAdmin, created_at AS createdAt " +
+    "FROM feedback_comments WHERE feedback_id=? AND status='published' " +
+    "ORDER BY created_at ASC LIMIT 150"
+  ).bind(feedbackId).all();
+  return responseJson({items:results.results || []},200,request,env);
+}
+async function submitComment(request, env, feedbackId) {
+  if (!safeOrigin(request,env)) return error("Comment origin not allowed.",403,request,env);
+  const body = await parseBody(request);
+  const comment = cleanCommentBody(body.body);
+  if (!comment) return error("Comment must be 10–1200 characters and cannot contain links or email addresses.",400,request,env);
+  if (body.acceptedTerms !== true) return error("Accept the Community Rules before commenting.",400,request,env);
+  const displayName = typeof body.displayName === "string" ? body.displayName.trim() : "";
+  if (displayName.length > 60 || /[\r\n]/.test(displayName) ||
+      (displayName && preventPersonalData(displayName,""))) {
+    return error("Optional display name must be 60 characters or less and contain no links or emails.",400,request,env);
+  }
+  const feedback = await env.DB.prepare("SELECT status FROM feedback WHERE id=?").bind(feedbackId).first();
+  if (!feedback || !VISIBLE.includes(feedback.status)) return error("Suggestion not found.",404,request,env);
+  const parentId = await parentForComment(env,feedbackId,body.parentId);
+  if (parentId === false) return error("Reply target is unavailable.",400,request,env);
+  if (!await verifyChallenge(body.turnstileToken,request,env)) {
+    return error("Verification expired or failed.",403,request,env);
+  }
+  if (!await checkRateLimit(request,env,"comment",12)) return error("Daily comment limit reached.",429,request,env);
+  const author = await voter(request,env,true);
+  const authorTag = author.hash.slice(0,16);
+  const now = Math.floor(Date.now()/1000);
+  const previous = await env.DB.prepare(
+    "SELECT id FROM feedback_comments WHERE feedback_id=? AND author_tag=? AND body=? " +
+    "AND COALESCE(parent_id,'')=? AND created_at>=? ORDER BY created_at DESC LIMIT 1"
+  ).bind(feedbackId,authorTag,comment,parentId || "",now-600).first();
+  if (previous) {
+    return responseJson({id:previous.id,status:"pending",duplicate:true},200,request,env,
+      author.cookie?{"Set-Cookie":author.cookie}:{});
+  }
+  const id = crypto.randomUUID();
+  await env.DB.prepare(
+    "INSERT INTO feedback_comments " +
+    "(id,feedback_id,parent_id,body,author_tag,author_display_name,is_admin,status,created_at,updated_at) " +
+    "VALUES (?,?,?,?,?,?,0,'pending',?,?)"
+  ).bind(id,feedbackId,parentId,comment,authorTag,displayName || null,now,now).run();
+  return responseJson({id,status:"pending",message:"Comment submitted for review."},
+    202,request,env,author.cookie?{"Set-Cookie":author.cookie}:{});
+}
+async function reportComment(request,env,feedbackId,commentId) {
+  if (!safeOrigin(request,env)) return error("Report origin not allowed.",403,request,env);
+  const body=await parseBody(request);
+  if (!["privacy","abuse","spam","other"].includes(body.reason)) return error("Invalid reason.",400,request,env);
+  const comment=await env.DB.prepare(
+    "SELECT status FROM feedback_comments WHERE feedback_id=? AND id=?"
+  ).bind(feedbackId,commentId).first();
+  if (!comment || comment.status!=="published") return error("Comment not found.",404,request,env);
+  if (!await verifyChallenge(body.turnstileToken,request,env)) return error("Verification expired.",403,request,env);
+  if (!await checkRateLimit(request,env,"comment-report",15)) return error("Daily report limit reached.",429,request,env);
+  const reporter=await voter(request,env,true);
+  await env.DB.prepare(
+    "INSERT OR IGNORE INTO feedback_comment_reports (comment_id,reporter_hash,reason,created_at) VALUES (?,?,?,?)"
+  ).bind(commentId,reporter.hash,body.reason,Math.floor(Date.now()/1000)).run();
+  return responseJson({received:true},202,request,env,
+    reporter.cookie?{"Set-Cookie":reporter.cookie}:{});
+}
+async function adminComments(request,env,url) {
+  if (!await adminAuthorized(request,env)) return error("Unauthorized.",401,request,env);
+  const status = ["pending","published","hidden"].includes(url.searchParams.get("status"))
+    ? url.searchParams.get("status") : "pending";
+  const feedbackId = url.searchParams.get("feedbackId");
+  if (feedbackId && !validUuid(feedbackId)) return error("Invalid suggestion ID.",400,request,env);
+  const query =
+    "SELECT c.*,f.title AS feedback_title, " +
+    "(SELECT COUNT(*) FROM feedback_comment_reports r WHERE r.comment_id=c.id) AS report_count " +
+    "FROM feedback_comments c INNER JOIN feedback f ON f.id=c.feedback_id " +
+    "WHERE c.status=?" + (feedbackId ? " AND c.feedback_id=?" : "") +
+    " ORDER BY c.created_at DESC LIMIT 100";
+  const statement=env.DB.prepare(query);
+  const data=await (feedbackId ? statement.bind(status,feedbackId) : statement.bind(status)).all();
+  return responseJson({items:data.results || []},200,request,env);
+}
+async function adminCommentReports(request,env) {
+  if (!await adminAuthorized(request,env)) return error("Unauthorized.",401,request,env);
+  const data=await env.DB.prepare(
+    "SELECT c.id,c.feedback_id,c.body,c.status,c.author_tag,c.author_display_name," +
+    "f.title AS feedback_title,COUNT(r.reporter_hash) AS report_count," +
+    "MAX(r.created_at) AS last_report_at " +
+    "FROM feedback_comment_reports r " +
+    "INNER JOIN feedback_comments c ON c.id=r.comment_id " +
+    "INNER JOIN feedback f ON f.id=c.feedback_id " +
+    "GROUP BY c.id ORDER BY report_count DESC,last_report_at DESC LIMIT 100"
+  ).all();
+  return responseJson({items:data.results || []},200,request,env);
+}
+async function adminCommentModerate(request,env,commentId) {
+  if (!await adminAuthorized(request,env)) return error("Unauthorized.",401,request,env);
+  if (request.method === "DELETE") {
+    const result=await env.DB.prepare("DELETE FROM feedback_comments WHERE id=?").bind(commentId).run();
+    if (!result.meta?.changes) return error("Comment not found.",404,request,env);
+    return responseJson({id:commentId,deleted:true},200,request,env);
+  }
+  const body=await parseBody(request);
+  if (!["pending","published","hidden"].includes(body.status)) return error("Invalid comment status.",400,request,env);
+  const result=await env.DB.prepare(
+    "UPDATE feedback_comments SET status=?,updated_at=? WHERE id=?"
+  ).bind(body.status,Math.floor(Date.now()/1000),commentId).run();
+  if (!result.meta?.changes) return error("Comment not found.",404,request,env);
+  return responseJson({id:commentId,status:body.status},200,request,env);
+}
+async function adminPostComment(request,env,feedbackId) {
+  if (!await adminAuthorized(request,env)) return error("Unauthorized.",401,request,env);
+  const body=await parseBody(request);
+  const comment=cleanCommentBody(body.body,{admin:true});
+  if (!comment) return error("Official reply must be 2–1200 characters with no links or emails.",400,request,env);
+  const feedback=await env.DB.prepare("SELECT status FROM feedback WHERE id=?").bind(feedbackId).first();
+  if (!feedback || !VISIBLE.includes(feedback.status)) return error("Publish the suggestion before replying.",400,request,env);
+  const parentId=await parentForComment(env,feedbackId,body.parentId);
+  if (parentId===false) return error("Reply target is unavailable.",400,request,env);
+  const id=crypto.randomUUID(),now=Math.floor(Date.now()/1000);
+  await env.DB.prepare(
+    "INSERT INTO feedback_comments " +
+    "(id,feedback_id,parent_id,body,author_tag,author_display_name,is_admin,status,created_at,updated_at) " +
+    "VALUES (?,?,?,?,'homefunds-team','HomeFunds Team',1,'published',?,?)"
+  ).bind(id,feedbackId,parentId,comment,now,now).run();
+  return responseJson({id,status:"published",isAdmin:true},201,request,env);
+}
+
 async function adminList(request, env, url) {
   if (!await adminAuthorized(request, env)) return error("Unauthorized.", 401, request, env);
   const status = ALL_STATUSES.includes(url.searchParams.get("status")) ? url.searchParams.get("status") : "pending";
@@ -368,6 +520,18 @@ export default {
       const report = path.match(/^\/v1\/feedback\/([0-9a-f-]{36})\/report$/);
       if (report && request.method === "POST") return await reportSuggestion(request,env,report[1]);
       if (path === "/v1/admin/session") return await adminSession(request,env);
+      const discussion=path.match(/^\/v1\/feedback\/([0-9a-f-]{36})\/comments$/);
+      if (discussion && request.method === "GET") return await publicComments(request,env,discussion[1]);
+      if (discussion && request.method === "POST") return await submitComment(request,env,discussion[1]);
+      const commentReport=path.match(/^\/v1\/feedback\/([0-9a-f-]{36})\/comments\/([0-9a-f-]{36})\/report$/);
+      if (commentReport && request.method === "POST") return await reportComment(request,env,commentReport[1],commentReport[2]);
+      const adminReply=path.match(/^\/v1\/admin\/feedback\/([0-9a-f-]{36})\/comments$/);
+      if (adminReply && request.method === "POST") return await adminPostComment(request,env,adminReply[1]);
+      if (request.method === "GET" && path === "/v1/admin/comments") return await adminComments(request,env,url);
+      if (request.method === "GET" && path === "/v1/admin/comment-reports") return await adminCommentReports(request,env);
+      const adminComment=path.match(/^\/v1\/admin\/comments\/([0-9a-f-]{36})$/);
+      if (adminComment && ["PUT","DELETE"].includes(request.method))
+        return await adminCommentModerate(request,env,adminComment[1]);
       if (request.method === "GET" && path === "/v1/admin/feedback") return await adminList(request,env,url);
       if (request.method === "GET" && path === "/v1/admin/reports") return await adminReports(request,env);
       const mod = path.match(/^\/v1\/admin\/feedback\/([0-9a-f-]{36})$/);
