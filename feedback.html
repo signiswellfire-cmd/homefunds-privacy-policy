@@ -51,9 +51,6 @@
     .report-form select{border:1px solid var(--line);border-radius:9px;padding:7px}
     .checkboxrow{display:flex;align-items:flex-start;gap:9px;margin:16px 0;font-size:.9rem}
     .checkboxrow input{min-width:18px;min-height:18px;accent-color:var(--purple)}
-    .age-panel{margin:55px auto;max-width:570px;text-align:center}
-    .age-panel .controls{justify-content:center}
-    .age-panel h1{line-height:1.2;color:var(--deep)}
     .field{display:flex;flex-direction:column;gap:5px}
     .field.full{grid-column:1/-1}
     .field label{font-weight:650;font-size:.88rem}
@@ -80,15 +77,6 @@
       <nav aria-label="Main navigation"><a href="home.html">Home</a><a href="./">Privacy</a><a href="terms.html">Terms</a></nav>
     </header>
     <main>
-      <section id="age-gate" class="panel age-panel">
-        <h1>HomeFunds community — adults only</h1>
-        <p class="muted">This public board contains suggestions written by other users. You must be 18 or older to view and participate.</p>
-        <div class="controls">
-          <button id="enter-board" class="primary" type="button">I am 18 or older</button>
-          <a class="ghost" href="home.html">I'm under 18 / Go back</a>
-        </div>
-      </section>
-      <div id="community-content" class="hidden">
       <section class="hero">
         <div class="eyebrow">HELP SHAPE HOMEFUNDS</div>
         <h1>Community feedback &amp; feature requests</h1>
@@ -121,6 +109,10 @@
               <input id="title" name="title" minlength="8" maxlength="100" required autocomplete="off" placeholder="e.g. Add shared budget summaries">
             </div>
             <div class="field">
+              <label for="submitter-name">Your name (optional, admin only)</label>
+              <input id="submitter-name" name="submitter-name" maxlength="60" autocomplete="nickname" placeholder="Leave blank to stay anonymous">
+            </div>
+            <div class="field">
               <label for="category">Feedback type</label>
               <select id="category" name="category" required>
                 <option value="feature">Feature request</option>
@@ -134,20 +126,19 @@
             </div>
           </div>
           <label class="checkboxrow"><input type="checkbox" id="accept-terms" required>
-            <span>I agree to the <a href="terms.html" target="_blank" rel="noopener">Community Rules and Terms of Service</a>. I confirm I am 18 or older, and understand that approved text may become public.</span>
+            <span>I agree to the <a href="terms.html" target="_blank" rel="noopener">Community Rules and Terms of Service</a>. I understand approved feedback may become public. My optional name will only be shown to the HomeFunds administrator.</span>
           </label>
-          <p class="muted" style="font-size:.84rem">You don't need to provide a name or email. Public votes use an anonymous browser cookie and can be reset if you clear it.</p>
+          <p class="muted" style="font-size:.84rem">No account or email is required. Public votes use an anonymous browser cookie and can be reset if you clear it. Names are self-reported, not verified.</p>
           <p class="muted" style="font-size:.84rem">Verification is required before submitting or voting.</p>
           <div id="turnstile" aria-label="Spam prevention"></div>
           <div id="form-message" class="status" role="status" aria-live="polite"></div>
           <button class="primary" id="submit-button" type="submit">Submit for review</button>
         </form>
       </section>
-      </div>
     </main>
     <footer class="bottom">
       <span>HomeFunds · Your feedback helps us improve.</span>
-      <span><a href="./">Privacy Policy</a> · <a href="terms.html">Terms of Service</a></span>
+      <span><a href="./">Privacy Policy</a> · <a href="terms.html">Terms of Service</a> · <a href="admin.html">Admin sign-in</a></span>
     </footer>
   </div>
 </body>
