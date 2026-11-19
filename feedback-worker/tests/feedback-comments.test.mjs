@@ -152,6 +152,13 @@ test("comment reports enter private moderator review, not public comments",async
     assert.ok(queries.some(q=>q.sql.includes("INSERT OR IGNORE INTO feedback_comment_reports")));
   });
 });
+test("community members cannot impersonate HomeFunds Team",async()=>{
+  const {env}=envFor();
+  const result=await worker.fetch(request("/v1/feedback/"+ID+"/comments",{
+    method:"POST",body:{...commentData,displayName:"HomeFunds Team"}
+  }),env);
+  assert.equal(result.status,400);
+});
 test("the public API will reject requests from untrusted origins",async()=>{
   const {env}=envFor();
   const result=await worker.fetch(request("/v1/feedback/"+ID+"/comments",{
