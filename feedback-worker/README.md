@@ -12,10 +12,13 @@ No paid service, domain migration, or new Google OAuth scope is required.
   **not** transmit local cash accounts, household IDs, transaction history,
   Google account email, backups, or access tokens.
 - User-supplied feedback can be published publicly after the owner reviews it.
-- No email is required for a submission or vote. A signed, HTTP-only,
-  secure, one-year cookie provides best-effort vote deduplication per browser.
-  It is **not** proof of one unique person, and resetting cookies allows
-  another vote. Do not represent vote totals as verified unique users.
+- No email is required. A signed, secure HTTP-only cookie supports browser
+  vote deduplication and stable anonymous author tags. Clearing cookies can
+  reset the identity; vote totals are not verified unique people.
+- Visitors self-confirm adult access. Posters accept Community Rules and Terms
+  before submitting. Public items have **Report content** and **Block author**
+  buttons. Blocking hides an anonymous author's posts in that browser.
+  Reports remain private for owner review; no direct messages or comments.
 - Each submission and vote requires **server-side validated Turnstile**.
   The Worker limits submits to 3/day and vote actions to 40/day per
   HMAC-hashed IP. Raw IPs are not stored by this application.
@@ -24,8 +27,8 @@ No paid service, domain migration, or new Google OAuth scope is required.
 - New feedback starts **pending**, never public immediately. Approved status
   values are `published`, `planned`, `in_progress` and `completed`.
   `hidden` and `pending` entries never appear in public responses.
-- This API contains only feedback text, categories, statuses, vote hashes
-  and rate-control hashes. It does not store the app's financial information.
+- This API contains feedback text, anonymous author tags, categories,
+  statuses, report/vote hashes, and rate-control hashes; no finance data.
 
 ## Setup — owner actions required
 
@@ -68,7 +71,8 @@ No paid service, domain migration, or new Google OAuth scope is required.
 7. Verify `https://feedback-api.signiswellfire.com/v1/health` returns
    `{"ready":true}`. Then set the public Turnstile sitekey in
    `feedback-config.js` and review the GitHub Pages preview.
-8. Test the form, moderation, voting and mobile WebView before merging.
+8. Test the form, reporting, blocking, age-gate, terms consent,
+   moderation, voting and Android WebView before merging.
    Finally deploy this website PR and the Android PR after both pass.
 
 ## Moderation without emails
@@ -92,6 +96,13 @@ curl -fsS -X PUT \
   "https://feedback-api.signiswellfire.com/v1/admin/feedback/REPLACE_FEEDBACK_UUID"
 ```
 
+To inspect reports of objectionable posts:
+
+```sh
+curl -fsS -H "Authorization: Bearer $HOMEFUNDS_FEEDBACK_ADMIN_TOKEN" \
+  "https://feedback-api.signiswellfire.com/v1/admin/reports"
+```
+
 Allowed admin statuses: `pending`, `published`, `planned`,
 `in_progress`, `completed`, `hidden`.
 If you accidentally approve sensitive content, change to `hidden`.
@@ -103,10 +114,13 @@ unauthenticated admin dashboard.
 - `GET /v1/feedback?sort=top|new` — published suggestions, vote totals,
   and whether the current signed browser voted; no private fields.
 - `POST /v1/feedback` — `title`, `details`, `category`,
-  `turnstileToken`; returns HTTP 202 pending.
+  `acceptedTerms`, `adultConfirmed`, `turnstileToken`; returns HTTP 202 pending.
 - `POST /v1/feedback/:id/vote` — `turnstileToken`; vote once per
   signed browser cookie.
 - `DELETE /v1/feedback/:id/vote` — `turnstileToken`; undo own vote.
+- `POST /v1/feedback/:id/report` — `reason` and `turnstileToken`;
+  creates a private moderation report.
+- `GET /v1/admin/reports` — owner only, report queue.
 - `GET /v1/admin/feedback?status=pending` — owner only.
 - `PUT /v1/admin/feedback/:id` — owner only, JSON `status`.
 
@@ -130,6 +144,9 @@ tokens must have that website hostname and action `feedback`.
 - Header, responsive layout, Back/Close behavior work in Android WebView.
 - Public feedback does not interfere with GitHub Pages privacy/terms or
   Google Drive OAuth domain verification.
+- Confirm Google Play UGC compliance: adult access, terms acceptance, ability
+  to report and block publicly visible content/users, and timely moderation.
+  Update the Play content rating and Data Safety answers as appropriate.
 - Confirm consent/privacy notice and release legal text before production.
 
 ## Operational note
