@@ -147,7 +147,7 @@ async function listPublic(request, env, url) {
   const identity = await voter(request, env);
   const order = sort === "new" ? "f.created_at DESC" : "voteCount DESC, f.created_at DESC";
   const rows = await env.DB.prepare(
-    "SELECT f.id, f.title, f.details, f.category, f.status, f.created_at AS createdAt, " +
+    "SELECT f.id, f.title, f.details, f.author_tag AS authorTag, f.category, f.status, f.created_at AS createdAt, " +
     "COUNT(v.voter_hash) AS voteCount, MAX(CASE WHEN v.voter_hash = ? THEN 1 ELSE 0 END) AS voted " +
     "FROM feedback AS f LEFT JOIN votes AS v ON v.feedback_id=f.id " +
     "WHERE f.status IN ('published','planned','in_progress','completed') " +
@@ -170,6 +170,9 @@ async function submit(request, env) {
   if (title.length < 8 || title.length > 100 || details.length < 20 || details.length > 1500 || !TYPES.includes(body.category)) {
     return error("Enter a valid title (8–100 characters), explanation (20–1500), and type.", 400, request, env);
   }
+  if (body.acceptedTerms !== true || body.adultConfirmed !== true) {
+    return error("Adults must agree to the Community Rules before submitting.", 400, request, env);
+  }
   const privacyError = preventPersonalData(title, details);
   if (privacyError) return error(privacyError, 400, request, env);
   if (!await verifyChallenge(body.turnstileToken, request, env)) {
@@ -179,10 +182,15 @@ async function submit(request, env) {
     return error("Daily submission limit reached. Try again tomorrow.", 429, request, env);
   }
   const id = crypto.randomUUID(), now = Math.floor(Date.now()/1000);
+  const identity = await voter(request, env, true);
+  const authorTag = identity.hash.slice(0,16);
   await env.DB.prepare(
-    "INSERT INTO feedback(id,title,details,category,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)"
-  ).bind(id,title,details,body.category,"pending",now,now).run();
-  return responseJson({id,status:"pending",message:"Submitted for moderation."}, 202, request, env);
+    "INSERT INTO feedback(id,title,details,author_tag,category,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)"
+  ).bind(id,title,details,authorTag,body.category,"pending",now,now).run();
+  return responseJson(
+    {id,status:"pending",message:"Submitted for moderation."},
+    202, request, env, identity.cookie ? {"Set-Cookie":identity.cookie} : {}
+  );
 }
 async function voteOn(request, env, id) {
   if (!safeOrigin(request, env)) return error("Voting origin not allowed.", 403, request, env);
@@ -208,15 +216,50 @@ async function voteOn(request, env, id) {
   return responseJson({voted:true}, newVote ? 201 : 200, request, env,
     identity.cookie ? {"Set-Cookie":identity.cookie} : {});
 }
+async function reportSuggestion(request, env, id) {
+  if (!safeOrigin(request, env)) return error("Report origin not allowed.",403,request,env);
+  const body = await parseBody(request);
+  const allowed = ["privacy", "abuse", "spam", "other"];
+  if (!allowed.includes(body.reason)) return error("Choose a report reason.",400,request,env);
+  if (!await verifyChallenge(body.turnstileToken, request, env)) {
+    return error("Verification expired or failed. Please try again.",403,request,env);
+  }
+  if (!await checkRateLimit(request,env,"report",15)) {
+    return error("Reporting limit reached. Try again tomorrow.",429,request,env);
+  }
+  const target = await env.DB.prepare("SELECT status FROM feedback WHERE id=?").bind(id).first();
+  if (!target || !VISIBLE.includes(target.status)) return error("Suggestion not found.",404,request,env);
+  const reporter = await voter(request, env, true);
+  await env.DB.prepare(
+    "INSERT OR IGNORE INTO reports(feedback_id,reporter_hash,reason,created_at) VALUES(?,?,?,?)"
+  ).bind(id,reporter.hash,body.reason,Math.floor(Date.now()/1000)).run();
+  return responseJson(
+    {received:true,message:"Report queued for owner review."},202,request,env,
+    reporter.cookie ? {"Set-Cookie":reporter.cookie} : {}
+  );
+}
+
 async function adminList(request, env, url) {
   if (!await adminAuthorized(request, env)) return error("Unauthorized.", 401, request, env);
   const status = ALL_STATUSES.includes(url.searchParams.get("status")) ? url.searchParams.get("status") : "pending";
   const rows = await env.DB.prepare(
-    "SELECT f.*, (SELECT COUNT(*) FROM votes v WHERE v.feedback_id=f.id) AS vote_count " +
+    "SELECT f.*, (SELECT COUNT(*) FROM votes v WHERE v.feedback_id=f.id) AS vote_count, " +
+    "(SELECT COUNT(*) FROM reports r WHERE r.feedback_id=f.id) AS report_count " +
     "FROM feedback f WHERE status=? ORDER BY created_at DESC LIMIT 100"
   ).bind(status).all();
   return responseJson({items:rows.results || []}, 200, request, env);
 }
+async function adminReports(request, env) {
+  if (!await adminAuthorized(request, env)) return error("Unauthorized.",401,request,env);
+  const rows = await env.DB.prepare(
+    "SELECT f.id,f.title,f.status,f.author_tag AS authorTag, " +
+    "COUNT(r.reporter_hash) AS reportCount, MAX(r.created_at) AS lastReportAt " +
+    "FROM reports r INNER JOIN feedback f ON f.id=r.feedback_id " +
+    "GROUP BY f.id ORDER BY reportCount DESC, lastReportAt DESC LIMIT 100"
+  ).all();
+  return responseJson({items:rows.results || []},200,request,env);
+}
+
 async function adminUpdate(request, env, id) {
   if (!await adminAuthorized(request, env)) return error("Unauthorized.", 401, request, env);
   const body = await parseBody(request);
@@ -250,7 +293,10 @@ export default {
       if (request.method === "POST" && path === "/v1/feedback") return await submit(request,env);
       const vote = path.match(/^\/v1\/feedback\/([0-9a-f-]{36})\/vote$/);
       if (vote && ["POST","DELETE"].includes(request.method)) return await voteOn(request,env,vote[1]);
+      const report = path.match(/^\/v1\/feedback\/([0-9a-f-]{36})\/report$/);
+      if (report && request.method === "POST") return await reportSuggestion(request,env,report[1]);
       if (request.method === "GET" && path === "/v1/admin/feedback") return await adminList(request,env,url);
+      if (request.method === "GET" && path === "/v1/admin/reports") return await adminReports(request,env);
       const mod = path.match(/^\/v1\/admin\/feedback\/([0-9a-f-]{36})$/);
       if (mod && request.method === "PUT") return await adminUpdate(request,env,mod[1]);
       return error("Not found.",404,request,env);
