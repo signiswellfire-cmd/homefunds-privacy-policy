@@ -74,7 +74,7 @@
     finally {busy=false;resetChallenge();}
   }
 
-  function discussionComposer(feedbackId, renderAgain) {
+  function discussionComposer(feedbackId) {
     let replyTo=null;
     const wrap=element("form","comment-form");
     const title=element("h4",null,"Join the discussion");
@@ -133,7 +133,8 @@
         replyTo=null;
         title.textContent="Join the discussion";
         cancel.classList.add("hidden");
-        await renderAgain();
+        // Pending comments are not publicly visible yet; preserve the success
+        // message instead of immediately replacing the composer.
       } catch(err) {status(feedback,err.message,"error");}
       finally {busy=false;submit.disabled=false;resetChallenge();}
     });
@@ -158,7 +159,7 @@
       panel.append(element("h4",null,"Discussion ("+comments.length+")"));
       const list=element("div","comments");
       const roots=new Map();
-      const composer=discussionComposer(item.id,()=>discussionFor(item,panel));
+      const composer=discussionComposer(item.id);
       const visible=comments.filter(c=>c.isAdmin || !blocked.has(c.authorTag));
       for(const comment of visible) {
         const outer=element("article","comment"+(comment.isAdmin?" official":""));
