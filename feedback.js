@@ -213,8 +213,8 @@
           title:document.getElementById("title").value.trim(),
           details:document.getElementById("details").value.trim(),
           category:document.getElementById("category").value,
+          submitterName:document.getElementById("submitter-name").value.trim(),
           acceptedTerms:document.getElementById("accept-terms").checked,
-          adultConfirmed:true,
           turnstileToken:token
         })
       });
@@ -242,27 +242,16 @@
   });
 
   document.addEventListener("DOMContentLoaded", () => {
-    const ageGate = document.getElementById("age-gate");
-    const content = document.getElementById("community-content");
-    function enterBoard() {
-      sessionStorage.setItem("homefunds_feedback_adult", "yes");
-      ageGate.classList.add("hidden");
-      content.classList.remove("hidden");
-      if (siteKey && window.turnstile) {
-        if (widgetId === null) {
-          widgetId = window.turnstile.render("#turnstile", {
-            sitekey:siteKey,
-            theme:"light",
-            action:"feedback"
-          });
-        }
-      } else if (siteKey) {
-        status(formStatus, "Spam verification could not load. Check your connection.", "error");
-        submitButton.disabled = true;
-      }
-      void load();
+    if (siteKey && window.turnstile) {
+      widgetId = window.turnstile.render("#turnstile", {
+        sitekey:siteKey,
+        theme:"light",
+        action:"feedback"
+      });
+    } else if (siteKey) {
+      status(formStatus, "Spam verification could not load. Check your connection.", "error");
+      submitButton.disabled = true;
     }
-    document.getElementById("enter-board").addEventListener("click", enterBoard);
-    if (sessionStorage.getItem("homefunds_feedback_adult") === "yes") enterBoard();
+    void load();
   });
 })();
