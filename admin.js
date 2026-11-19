@@ -163,7 +163,6 @@
     }
   }
   async function load() {
-    if (busy && queue.childElementCount > 0) return;
     message(listMessage, "Loading feedback…");
     queue.replaceChildren();
     try {
