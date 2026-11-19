@@ -21,6 +21,15 @@ financial-data server, domain or paid service is required.
 - Admin queue: pending/published/planned/in progress/completed/hidden, received
   timestamp, category, vote/report counts, anonymous author tag and optional
   name. Approve, change status, hide and permanently delete with confirmation.
+- **Threaded discussions**: visitors can comment on published suggestions and
+  reply once to a top-level comment. Community comments are pending until you
+  approve them. Official replies posted from the admin dashboard appear as
+  **HomeFunds Team** and are published immediately.
+- Comment moderation queues: pending, published, hidden, and reported
+  comments. Administrators can approve/hide/delete and respond officially.
+  Comment-specific reporting and anonymous-author blocking are included.
+  Visitor comments can optionally include a *public* display name; this is
+  distinct from the private name on feature submissions.
 - Optional submitter name is **visible to the admin only** (not public). It
   is provided voluntarily and **not verified**. Existing submissions have
   no name or Google identity; the system cannot reconstruct the person's
@@ -31,8 +40,9 @@ financial-data server, domain or paid service is required.
 
 ## Important — upgrade the existing D1 before deploying the new code
 
-This upgrade uses a new nullable `submitter_name` column. It must be added
-to the **existing** D1 database. Do **NOT** rerun `schema.sql` and do not
+This upgrade uses a new nullable `submitter_name` column plus two new
+tables (`feedback_comments` and `feedback_comment_reports`). All are
+created by **one** non-destructive migration on the existing D1 database. Do **NOT** rerun `schema.sql` and do not
 delete the D1 database, because it already contains published feedback and votes.
 
 On Steam Deck in `/home/deck/Development/HomeFunds-feedback-site`:
@@ -57,6 +67,12 @@ npx wrangler d1 execute homefunds-feedback --remote \
   --command="SELECT id,title,status,submitter_name FROM feedback;"
 ```
 
+The migration also creates indexes for comment moderation. It must be run
+**only once** on the existing database: attempting the ALTER TABLE again will
+produce a duplicate-column error. Check with `PRAGMA table_info(feedback)`
+first. Back up the database before production modifications if you need a
+rollback point.
+
 `wrangler.toml` and the `.wrangler/` directory are intentionally untracked
 and ignored. The local Worker configuration and custom domain remain intact
 across branch switches; do not check secrets or private files into Git.
@@ -78,9 +94,15 @@ admin-session API and optional-name D1 column.
 2. Paste the **same HomeFunds Feedback Admin Token** previously used in
    Konsole. Use a password manager so you don't have to type it every time.
 3. Review pending posts, choose **Approve & publish**, change status or hide.
-4. Use **Delete permanently** only when you want to erase the suggestion,
-   votes and reports; hidden is better for reversible moderation.
-5. See **Reported content** to review reports. Sign out when done.
+4. For approved suggestions, use **Post an official HomeFunds response** to
+   reply without leaving the admin page; official responses publish immediately.
+5. Under **Comments awaiting approval**, review visitor comments and approve
+   or hide them. Under **Reported comments**, moderate reported discussion.
+   You can also reply to an approved top-level visitor comment.
+6. Use **Delete permanently** only when you want to erase a suggestion
+   and all its comments/votes/reports, or an individual comment; hidden is
+   better for reversible moderation.
+7. Sign out when done.
 
 Never share the ADMIN_TOKEN or put it in a GitHub file. The page itself is
 public HTML, but its underlying moderation data and actions are protected
@@ -112,6 +134,11 @@ Public:
   optional `submitterName`, `acceptedTerms:true`, `turnstileToken`.
 - `POST|DELETE /v1/feedback/:id/vote`
 - `POST /v1/feedback/:id/report`
+- `GET /v1/feedback/:id/comments`: publicly approved replies only.
+- `POST /v1/feedback/:id/comments`: visitor comment awaiting moderation;
+  body, optional public displayName, optional parentId, acceptedTerms:true,
+  Turnstile token.
+- `POST /v1/feedback/:id/comments/:commentId/report`: report a comment.
 
 Private:
 - `POST /v1/admin/session`: `{token}` sets admin session cookie.
@@ -121,6 +148,11 @@ Private:
 - `GET /v1/admin/reports`: private report queue.
 - `PUT /v1/admin/feedback/:id`: change status.
 - `DELETE /v1/admin/feedback/:id`: permanently delete post and child records.
+- `POST /v1/admin/feedback/:id/comments`: publish official HomeFunds Team reply.
+- `GET /v1/admin/comments?status=pending|published|hidden`: moderation queue.
+- `GET /v1/admin/comment-reports`: reported visitor comments.
+- `PUT /v1/admin/comments/:id`: approve or hide comment.
+- `DELETE /v1/admin/comments/:id`: permanently delete comment.
 
 ## Regression / release checklist
 
@@ -134,7 +166,9 @@ Private:
 5. Submit with optional name; confirm it is visible only to admin. Submit
    without name; confirm that remains possible without any 18+ prompt.
 6. Approve, change status, hide, delete; confirm reported items and votes
-   behave correctly.
+   behave correctly. Test visitor discussions, 1-level replies, approvals,
+   official HomeFunds Team replies, comments privacy, report/block controls,
+   and deletion cascades. Non-approved comments must not appear publicly.
 7. Confirm current mobile/Android WebView feedback experience still works,
    and Terms/report/block remain available.
 8. Publish the website via reviewed PR only after the backend passes.
