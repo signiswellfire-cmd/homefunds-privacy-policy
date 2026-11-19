@@ -12,6 +12,11 @@
   const sort = document.getElementById("sort");
   let widgetId = null;
   let busy = false;
+  const blockKey = "hf_feedback_blocked_authors";
+  let blocked;
+  try { blocked = new Set(JSON.parse(localStorage.getItem(blockKey) || "[]")); }
+  catch { blocked = new Set(); }
+  let lastItems = [];
 
   function element(tag, className, text) {
     const item = document.createElement(tag);
@@ -47,15 +52,21 @@
   }
 
   function renderList(items) {
+    lastItems = items;
+    const visible = items.filter(item => !blocked.has(item.authorTag));
+    const unblockButton = document.getElementById("unblock-button");
+    unblockButton.classList.toggle("hidden", blocked.size === 0);
     board.replaceChildren();
-    if (!items.length) {
+    if (!visible.length) {
       const panel = element("div", "panel");
       panel.append(element("h3", null, "No published suggestions yet."));
-      panel.append(element("p", "muted", "Be the first to send an idea. It will appear after review."));
+      panel.append(element("p", "muted", items.length
+        ? "Suggestions from blocked authors are hidden. Choose Unblock authors to see them again."
+        : "Be the first to send an idea. It will appear after review."));
       board.append(panel);
       return;
     }
-    for (const item of items) {
+    for (const item of visible) {
       const card = element("article", "item");
       const vote = element("button", "vote" + (item.voted ? " active" : ""));
       vote.type = "button";
@@ -69,6 +80,9 @@
       const meta = element("div", "meta");
       meta.append(element("span", "pill", item.categoryLabel || item.category));
       meta.append(element("span", "pill", item.statusLabel || item.status));
+      if (item.authorTag) {
+        meta.append(element("span", null, "Anonymous author " + item.authorTag.slice(0, 6)));
+      }
       const date = Number(item.createdAt);
       if (Number.isFinite(date)) {
         meta.append(element("span", null, new Date(date * 1000).toLocaleDateString()));
@@ -76,6 +90,40 @@
       details.append(meta);
       details.append(element("h3", null, item.title));
       details.append(element("p", "description", item.details));
+      const actions = element("div", "actions");
+      const report = element("button", "ghost", "Report content");
+      report.type = "button";
+      const reportForm = element("div", "report-form hidden");
+      const reason = element("select");
+      reason.setAttribute("aria-label", "Report reason");
+      for (const [key, label] of [
+        ["privacy", "Personal or private information"],
+        ["abuse", "Harassment or abusive content"],
+        ["spam", "Spam or advertising"],
+        ["other", "Other inappropriate content"]
+      ]) {
+        const option = element("option", null, label);
+        option.value = key;
+        reason.append(option);
+      }
+      const sendReport = element("button", "ghost", "Send report");
+      sendReport.type = "button";
+      sendReport.addEventListener("click", () => reportItem(item.id, reason.value));
+      reportForm.append(reason, sendReport);
+      report.addEventListener("click", () => reportForm.classList.toggle("hidden"));
+      actions.append(report);
+      if (item.authorTag) {
+        const block = element("button", "ghost", "Block author");
+        block.type = "button";
+        block.addEventListener("click", () => {
+          blocked.add(item.authorTag);
+          localStorage.setItem(blockKey, JSON.stringify([...blocked]));
+          renderList(lastItems);
+          status(systemStatus, "Posts by this anonymous author are now hidden on this device.", "success");
+        });
+        actions.append(block);
+      }
+      details.append(actions, reportForm);
       card.append(vote, details);
       board.append(card);
     }
@@ -95,6 +143,30 @@
     } catch (error) {
       status(systemStatus, error.message, "error");
       board.replaceChildren();
+    }
+  }
+
+  async function reportItem(id, reason) {
+    if (busy) return;
+    const token = getChallengeToken();
+    if (!token) {
+      status(systemStatus, "Complete the spam check below before reporting.", "error");
+      document.getElementById("turnstile").scrollIntoView({behavior:"smooth",block:"center"});
+      return;
+    }
+    busy = true;
+    try {
+      await api("/v1/feedback/" + encodeURIComponent(id) + "/report", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({reason,turnstileToken:token})
+      });
+      status(systemStatus, "Your report has been queued for review.", "success");
+    } catch (error) {
+      status(systemStatus, error.message, "error");
+    } finally {
+      busy = false;
+      resetChallenge();
     }
   }
 
@@ -141,6 +213,8 @@
           title:document.getElementById("title").value.trim(),
           details:document.getElementById("details").value.trim(),
           category:document.getElementById("category").value,
+          acceptedTerms:document.getElementById("accept-terms").checked,
+          adultConfirmed:true,
           turnstileToken:token
         })
       });
@@ -156,22 +230,39 @@
   });
 
   sort.addEventListener("change", load);
+  document.getElementById("unblock-button").addEventListener("click", () => {
+    blocked.clear();
+    localStorage.removeItem(blockKey);
+    renderList(lastItems);
+    status(systemStatus, "Blocked authors have been restored.", "success");
+  });
   document.getElementById("add-button").addEventListener("click", () => {
     document.getElementById("submit-panel").scrollIntoView({behavior:"smooth",block:"start"});
     document.getElementById("title").focus({preventScroll:true});
   });
 
   document.addEventListener("DOMContentLoaded", () => {
-    if (siteKey && window.turnstile) {
-      widgetId = window.turnstile.render("#turnstile", {
-        sitekey:siteKey,
-        theme:"light",
-        action:"feedback"
-      });
-    } else if (siteKey) {
-      status(formStatus, "Spam verification could not load. Check your network connection.", "error");
-      submitButton.disabled = true;
+    const ageGate = document.getElementById("age-gate");
+    const content = document.getElementById("community-content");
+    function enterBoard() {
+      sessionStorage.setItem("homefunds_feedback_adult", "yes");
+      ageGate.classList.add("hidden");
+      content.classList.remove("hidden");
+      if (siteKey && window.turnstile) {
+        if (widgetId === null) {
+          widgetId = window.turnstile.render("#turnstile", {
+            sitekey:siteKey,
+            theme:"light",
+            action:"feedback"
+          });
+        }
+      } else if (siteKey) {
+        status(formStatus, "Spam verification could not load. Check your connection.", "error");
+        submitButton.disabled = true;
+      }
+      void load();
     }
-    void load();
+    document.getElementById("enter-board").addEventListener("click", enterBoard);
+    if (sessionStorage.getItem("homefunds_feedback_adult") === "yes") enterBoard();
   });
 })();
