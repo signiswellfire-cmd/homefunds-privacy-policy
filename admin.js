@@ -72,6 +72,106 @@
       message(globalMessage, err.message, "error");
     } finally { busy = false; }
   }
+
+  function officialReplyForm(feedbackId, parentId = null) {
+    const form=el("form","reply-form");
+    const heading=el("h4",null,parentId ? "Reply officially to this comment" : "Post an official HomeFunds response");
+    const hint=el("p","muted","Official replies appear publicly as HomeFunds Team. Do not share private data.");
+    const body=el("textarea");
+    body.required=true;
+    body.minLength=2;
+    body.maxLength=1200;
+    body.placeholder="Your official response...";
+    body.setAttribute("aria-label","Official HomeFunds response");
+    const post=el("button","primary","Publish official response");
+    post.type="submit";
+    form.append(heading,hint,body,post);
+    form.addEventListener("submit",async event=>{
+      event.preventDefault();
+      if (!form.reportValidity() || busy) return;
+      const text=body.value.trim();
+      if (!text) return;
+      const confirmation=window.confirm("Publish this official reply publicly as HomeFunds Team?");
+      if (!confirmation) return;
+      await act("/v1/admin/feedback/"+encodeURIComponent(feedbackId)+"/comments",
+        "POST",{body:text,parentId});
+    });
+    return form;
+  }
+  function commentActions(item, {allowOfficialReply = false} = {}) {
+    const row=el("div","row");
+    row.style.marginTop="12px";
+    const select=el("select");
+    select.setAttribute("aria-label","Change comment status");
+    for(const [value,label] of [
+      ["pending","Awaiting approval"],["published","Published"],["hidden","Hidden"]
+    ]) {
+      const option=el("option",null,label);
+      option.value=value;
+      select.append(option);
+    }
+    select.value=item.status;
+    row.append(select,btn("Save status",()=>
+      void act("/v1/admin/comments/"+encodeURIComponent(item.id),"PUT",{status:select.value}),"primary"));
+    if(item.status==="pending"){
+      row.append(btn("Approve comment",()=>void act(
+        "/v1/admin/comments/"+encodeURIComponent(item.id),"PUT",{status:"published"}
+      ),"primary"));
+    }
+    if(item.status==="published"){
+      row.append(btn("Hide comment",()=>void act(
+        "/v1/admin/comments/"+encodeURIComponent(item.id),"PUT",{status:"hidden"}
+      ),"danger"));
+    }
+    row.append(btn("Delete permanently",()=>{
+      if(window.prompt("Delete this comment permanently? Type DELETE to confirm.")==="DELETE"){
+        void act("/v1/admin/comments/"+encodeURIComponent(item.id),"DELETE");
+      }
+    },"danger"));
+    return row;
+  }
+  function renderComments(rows) {
+    queue.replaceChildren();
+    if(!rows.length){
+      queue.append(el("p","muted","No comments in this queue."));
+      return;
+    }
+    for(const item of rows){
+      const card=el("article","feedback comment-admin");
+      card.append(el("h3",null,item.feedback_title||"Suggestion"));
+      const meta=el("div","meta");
+      addMeta(meta,"Comment date: "+formatTime(item.created_at));
+      addMeta(meta,"Status: "+item.status);
+      addMeta(meta,"Reports: "+(item.report_count||0));
+      if(item.parent_id) addMeta(meta,"Reply to comment: "+item.parent_id.slice(0,8));
+      if(item.is_admin) addMeta(meta,"Official HomeFunds Team response");
+      card.append(meta,el("p","description",item.body));
+      const name=item.is_admin?"HomeFunds Team":
+        (item.author_display_name ? item.author_display_name+" (self-provided)" : "Anonymous");
+      card.append(el("p","muted","By: "+name+" · Browser tag: "+(item.author_tag||"")));
+      card.append(commentActions(item));
+      if (item.status==="published" && !item.parent_id) {
+        card.append(officialReplyForm(item.feedback_id,item.id));
+      }
+      queue.append(card);
+    }
+  }
+  function renderCommentReports(rows) {
+    queue.replaceChildren();
+    if(!rows.length){queue.append(el("p","muted","No reported comments."));return;}
+    for(const item of rows){
+      const card=el("article","feedback comment-admin");
+      card.append(el("h3",null,item.feedback_title||"Suggestion"));
+      const meta=el("div","meta");
+      addMeta(meta,"Reports: "+(item.report_count||0));
+      addMeta(meta,"Last reported: "+formatTime(item.last_report_at));
+      addMeta(meta,"Status: "+item.status);
+      card.append(meta,el("p","description",item.body));
+      card.append(commentActions(item));
+      queue.append(card);
+    }
+  }
+
   function renderReports(rows) {
     queue.replaceChildren();
     if (!rows.length) {
@@ -159,6 +259,9 @@
         }
       }, "danger"));
       card.append(row);
+      if (["published","planned","in_progress","completed"].includes(item.status)) {
+        card.append(officialReplyForm(item.id));
+      }
       queue.append(card);
     }
   }
@@ -167,12 +270,18 @@
     queue.replaceChildren();
     try {
       const type = filter.value;
-      const path = type === "reports"
-        ? "/v1/admin/reports"
-        : "/v1/admin/feedback?status=" + encodeURIComponent(type);
+      let path;
+      if (type === "reports") path="/v1/admin/reports";
+      else if (type === "comment_reports") path="/v1/admin/comment-reports";
+      else if (type.startsWith("comments_")) {
+        path="/v1/admin/comments?status="+encodeURIComponent(type.slice(9));
+      } else path="/v1/admin/feedback?status="+encodeURIComponent(type);
       const data = await api(path);
-      if (type === "reports") renderReports(Array.isArray(data.items) ? data.items : []);
-      else renderFeedback(Array.isArray(data.items) ? data.items : []);
+      const rows=Array.isArray(data.items)?data.items:[];
+      if (type === "reports") renderReports(rows);
+      else if (type === "comment_reports") renderCommentReports(rows);
+      else if (type.startsWith("comments_")) renderComments(rows);
+      else renderFeedback(rows);
       message(listMessage, "");
     } catch (err) {
       if (err.status === 401) {
