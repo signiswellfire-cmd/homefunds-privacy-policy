@@ -243,7 +243,7 @@ export default {
       }
       if (request.method === "OPTIONS") {
         return safeOrigin(request,env)
-          ? responseJson({},204,request,env)
+          ? responseJson({},200,request,env)
           : error("Origin not allowed.",403,request,env);
       }
       if (request.method === "GET" && path === "/v1/feedback") return await listPublic(request,env,url);
@@ -261,5 +261,11 @@ export default {
       // No raw error text, SQL details or secrets in public responses.
       return error("Service temporarily unavailable.",500,request,env);
     }
+  },
+  async scheduled(event, env) {
+    if (!env.DB) return;
+    // Keep only the previous seven days of HMAC-derived rate-limit counters.
+    const cutoff = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+    await env.DB.prepare("DELETE FROM rate_limits WHERE day < ?").bind(cutoff).run();
   }
 };
