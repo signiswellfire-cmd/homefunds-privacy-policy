@@ -1,7 +1,7 @@
 name: Feedback board checks
 on:
   push:
-    branches: [feature/community-feedback-board]
+    branches: [feature/community-feedback-board, feature/website-admin-and-open-feedback]
   pull_request:
 
 jobs:
@@ -15,6 +15,7 @@ jobs:
       - name: Validate JavaScript
         run: |
           node --check feedback.js
+          node --check admin.js
           node --check feedback-config.js
           node --check feedback-worker/src/index.js
       - name: Test Worker protections
@@ -35,5 +36,17 @@ jobs:
               raise AssertionError("Duplicate vote accepted")
           except sqlite3.IntegrityError:
               pass
-          print("Schema and unique-vote constraint pass")
+          columns = {col[1] for col in database.execute("PRAGMA table_info(feedback)")}
+          assert "submitter_name" in columns
+          # Verify the upgrade is safe on an existing database with live data.
+          older = sqlite3.connect(":memory:")
+          old_schema = Path("feedback-worker/schema.sql").read_text().replace(
+              "  submitter_name TEXT,\\n", ""
+          )
+          older.executescript(old_schema)
+          older.execute("INSERT INTO feedback(id,title,details,author_tag,category,status,created_at,updated_at) VALUES('old','existing feedback','some details','anon456','feature','published',1,1)")
+          older.executescript(Path("feedback-worker/migrations/0001_submitter_name.sql").read_text())
+          assert older.execute("SELECT COUNT(*) FROM feedback").fetchone()[0] == 1
+          assert older.execute("SELECT submitter_name FROM feedback WHERE id='old'").fetchone()[0] is None
+          print("Schema, unique-vote constraint, and non-destructive upgrade pass")
           PY
