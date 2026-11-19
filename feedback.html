@@ -45,6 +45,15 @@
     .vote.active{background:#5f38c7;color:#fff;border-color:#5f38c7}
     .vote span{font-size:.75rem;font-weight:500}
     .entry-grid{display:grid;gap:14px;grid-template-columns:1fr 1fr}
+    .actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px}
+    .actions button{font-size:.8rem;padding:6px 10px}
+    .report-form{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0}
+    .report-form select{border:1px solid var(--line);border-radius:9px;padding:7px}
+    .checkboxrow{display:flex;align-items:flex-start;gap:9px;margin:16px 0;font-size:.9rem}
+    .checkboxrow input{min-width:18px;min-height:18px;accent-color:var(--purple)}
+    .age-panel{margin:55px auto;max-width:570px;text-align:center}
+    .age-panel .controls{justify-content:center}
+    .age-panel h1{line-height:1.2;color:var(--deep)}
     .field{display:flex;flex-direction:column;gap:5px}
     .field.full{grid-column:1/-1}
     .field label{font-weight:650;font-size:.88rem}
@@ -71,6 +80,15 @@
       <nav aria-label="Main navigation"><a href="home.html">Home</a><a href="./">Privacy</a><a href="terms.html">Terms</a></nav>
     </header>
     <main>
+      <section id="age-gate" class="panel age-panel">
+        <h1>HomeFunds community — adults only</h1>
+        <p class="muted">This public board contains suggestions written by other users. You must be 18 or older to view and participate.</p>
+        <div class="controls">
+          <button id="enter-board" class="primary" type="button">I am 18 or older</button>
+          <a class="ghost" href="home.html">I'm under 18 / Go back</a>
+        </div>
+      </section>
+      <div id="community-content" class="hidden">
       <section class="hero">
         <div class="eyebrow">HELP SHAPE HOMEFUNDS</div>
         <h1>Community feedback &amp; feature requests</h1>
@@ -88,6 +106,7 @@
             <option value="top">Most votes</option>
             <option value="new">Newest</option>
           </select>
+          <button class="ghost hidden" id="unblock-button" type="button">Unblock authors</button>
           <button class="primary" id="add-button" type="button">Suggest an idea</button>
         </div>
       </div>
@@ -114,6 +133,9 @@
               <textarea id="details" name="details" minlength="20" maxlength="1500" required placeholder="What problem does this solve? What would you expect HomeFunds to do?"></textarea>
             </div>
           </div>
+          <label class="checkboxrow"><input type="checkbox" id="accept-terms" required>
+            <span>I agree to the <a href="terms.html" target="_blank" rel="noopener">Community Rules and Terms of Service</a>. I confirm I am 18 or older, and understand that approved text may become public.</span>
+          </label>
           <p class="muted" style="font-size:.84rem">You don't need to provide a name or email. Public votes use an anonymous browser cookie and can be reset if you clear it.</p>
           <p class="muted" style="font-size:.84rem">Verification is required before submitting or voting.</p>
           <div id="turnstile" aria-label="Spam prevention"></div>
@@ -121,6 +143,7 @@
           <button class="primary" id="submit-button" type="submit">Submit for review</button>
         </form>
       </section>
+      </div>
     </main>
     <footer class="bottom">
       <span>HomeFunds · Your feedback helps us improve.</span>
