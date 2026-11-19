@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS feedback (
   title TEXT NOT NULL,
   details TEXT NOT NULL,
   author_tag TEXT NOT NULL,
+  submitter_name TEXT,
   category TEXT NOT NULL CHECK(category IN ('feature', 'improvement', 'bug')),
   status TEXT NOT NULL DEFAULT 'pending'
     CHECK(status IN ('pending','published','planned','in_progress','completed','hidden')),
